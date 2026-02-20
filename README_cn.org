@@ -166,7 +166,7 @@ ID__Author__Title==keyword1_keyword2--status-rating.org
 在 Refinery 中编辑时，header-line 会显示实时压缩进度：
 
 #+begin_example
-拆 45% ██████████████████████░░░░░░░░░░░░░░  (1000 → 550 字)
+ 拆 45% ██████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 #+end_example
 
 [[file:pics/chai-workbench.png]]

@@ -499,13 +499,12 @@ Use this to fix entries created with old word-counting algorithm."
   (if (and chai-original-wc (> chai-original-wc 0))
       (let* ((current-wc (how-many "[^[:space:]]" (point-min) (point-max)))
              (ratio (max 0 (min 100 (* 100 (- 1 (/ (float current-wc) chai-original-wc))))))
-             (width (- (window-width) 20))
+             (width (- (window-width) 10))
              (filled (truncate (* width (/ ratio 100.0))))
              (empty (- width filled))
              (bar (concat (propertize (make-string filled ?█) 'face 'chai-progress-bar)
                           (make-string empty ?░)))
-             (text (format "拆 %d%% (%d → %d) " 
-                          (truncate ratio) chai-original-wc current-wc)))
+             (text (format " 拆 %d%% " (truncate ratio))))
         (concat (propertize text 'face 'chai-progress-text) bar))
     (propertize " 拆 Refinery " 'face 'chai-progress-text)))
 

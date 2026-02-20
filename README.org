@@ -169,7 +169,7 @@ Run =M-x chai-library-open= to open the library interface (opens full-frame):
 While editing in Refinery, the header-line shows real-time compression progress:
 
 #+begin_example
-拆 45% ██████████████████████░░░░░░░░░░░░░░  (1000 → 550 words)
+ 拆 45% ██████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 #+end_example
 
 [[file:pics/chai-workbench.png]]
