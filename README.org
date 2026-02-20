@@ -3,7 +3,9 @@
 #+EMAIL: yibie@outlook.com
 #+DATE: 2025-01
 
-* Chai (拆)
+[[file:README_cn.org][中文]]
+
+* What is Chai (拆)
 
 "拆" (chāi) — to dismantle, break down, and digest complex knowledge into your own understanding.
 
