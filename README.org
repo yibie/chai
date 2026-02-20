@@ -1,0 +1,300 @@
+#+TITLE: Chai (拆) - Destructive Reading and Knowledge Digestion
+#+AUTHOR: Yibie
+#+EMAIL: yibie@outlook.com
+#+DATE: 2025-01
+
+* Chai (拆)
+
+"拆" (chāi) — to dismantle, break down, and digest complex knowledge into your own understanding.
+
+Chai is an Emacs knowledge management workflow with two core modules:
+
+1. *Library* — Manage reading materials, import from PDF/Markdown/EPUB/HTML
+2. *Refinery* — "Fork" content into a workbench for deep processing and refinement
+
+#+begin_quote
+📖 Read → 🔧 Dismantle → ✨ Internalize
+#+end_quote
+
+** Demo
+
+[[file:pics/demo.gif]]
+
+* Installation
+
+** Dependencies
+
+- Emacs 29.1+
+- [[https://pandoc.org/][Pandoc]] (file conversion)
+- Python 3.x + PyMuPDF (PDF processing)
+
+*** macOS OCR Support (Optional)
+
+#+begin_src bash
+pip install pyobjc-framework-Vision Pillow
+#+end_src
+
+⚠️ OCR features are only available on macOS, using Apple Vision framework for scanned PDFs.
+
+** Configuration
+
+#+begin_src elisp
+;; Add to load-path
+(add-to-list 'load-path "~/path/to/chai/")
+
+;; Load core modules
+(require 'chai)               ;; Refinery workbench
+(require 'chai-library)       ;; Library
+(require 'chai-library-table) ;; Library table interface
+
+;; Optional: Global keybindings
+(global-set-key (kbd "C-c l") #'chai-library-open)
+(global-set-key (kbd "C-c r") #'chai-switch-draft)
+#+end_src
+
+** Directory Structure
+
+Chai uses the following default directory structure (under =~/.emacs.d/chai/=):
+
+#+begin_example
+~/.emacs.d/chai/
+├── library/          ;; Library files
+├── inbox/            ;; Import inbox
+├── archive/          ;; Archived source files after import
+└── refinery.org      ;; Refinery workbench
+#+end_example
+
+Customize via these variables:
+
+| Variable | Description | Default |
+|----------+-------------+---------|
+| =chai-library-directory= | Library directory | =~/.emacs.d/chai/library/= |
+| =chai-library-import-inbox= | Import inbox | =~/.emacs.d/chai/inbox/= |
+| =chai-library-import-archive= | Archive directory | =~/.emacs.d/chai/archive/= |
+| =chai-refinery-file= | Refinery file | =~/.emacs.d/chai/refinery.org= |
+
+* Library
+
+** Importing Files
+
+*** Method 1: Emacs Commands (Recommended)
+
+- =M-x chai-library-import= — Batch import all files in inbox
+- =C-u M-x chai-library-import= — Import a single specified file
+
+*** Method 2: Command Line
+
+#+begin_src bash
+# Batch import
+python convert-to-org.py \
+  --temp ~/.emacs.d/chai/inbox/ \
+  --reference ~/.emacs.d/chai/library/ \
+  --archive ~/.emacs.d/chai/archive/
+
+# Single file import
+python convert-to-org.py \
+  --file ~/Downloads/paper.pdf \
+  --reference ~/.emacs.d/chai/library/
+#+end_src
+
+*** Supported Formats
+
+- PDF (supports scanned PDF OCR, macOS only)
+- Markdown
+- EPUB
+- HTML
+
+** File Naming Convention
+
+Imported files use structured naming:
+
+#+begin_example
+ID__Author__Title==keyword1_keyword2--status-rating.org
+#+end_example
+
+Delimiter meanings:
+- =__= — Metadata separator (ID, author, title)
+- ==== — Keyword separator
+- =--= — Status and rating
+
+** Using the Library
+
+Run =M-x chai-library-open= to open the library interface (opens full-frame):
+
+[[file:pics/chai-library.png]]
+
+| Key | Function |
+|-----+----------|
+| =RET= | Open selected book/document |
+| =s= | Set reading status (unread/reading/done/archived) |
+| =r= / =0-5= | Set rating (0-5 stars) |
+| =k= | Set keywords (comma-separated, stored in filename) |
+| =a= | Rename to Chai format (add ID) |
+| =d= | Delete file (requires confirmation) |
+| =/= | Filter by title/author/keywords |
+| =c= | Clear filter |
+| =S= | Toggle sort order |
+| =g= | Refresh list |
+
+* Refinery
+
+** Workflow
+
+#+begin_example
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│   Source    │ ──▶ │    Fork     │ ──▶ │   Process   │ ──▶ │    Save     │
+│  (Library)  │      │ (Refinery)  │      │ (Compress/  │      │ (Permanent  │
+│             │      │             │      │  Rewrite)   │      │   Note)     │
+└─────────────┘      └─────────────┘      └─────────────┘      └─────────────┘
+#+end_example
+
+** Commands
+
+| Command | Function |
+|---------+----------|
+| =M-x chai-refine-heading= | Fork current heading to Refinery |
+| =M-x chai-refine-region= | Fork selected region |
+| =M-x chai-switch-draft= | Switch/open pending draft |
+| =C-c C-c= | Save as permanent note |
+| =C-c h= | Highlight (plain) |
+| =C-c H= | Highlight with annotation |
+| =C-c d= | Remove highlight |
+| =C-c p= | Toggle Context Panel |
+| =C-c C-r= | Refresh annotations |
+
+** Compression Progress
+
+While editing in Refinery, the header-line shows real-time compression progress:
+
+#+begin_example
+拆 45% ██████████████████████░░░░░░░░░░░░░░  (1000 → 550 words)
+#+end_example
+
+[[file:pics/chai-workbench.png]]
+
+** Highlighting System
+
+Mark important content while reading with 12 semantic types. Annotations are
+rendered automatically in any Org buffer containing chai links — no need to
+manually enable =chai-mode=.
+
+[[file:pics/chai-annotation.png]]
+
+*** Original Types
+
+- 🔴 *important* — Important viewpoint
+- 🟢 *idea* — Inspiration/thought
+- 🟠 *question* — Question
+- 🟡 *critical* — Critical content
+
+*** Extended Types
+
+- 💛 *key* — Central idea/main point (yellow)
+- 🔴 *core* — Definition/core concept (red/orange)
+- 🟢 *detail* — Data/key details (green, underline)
+- 🔵 *example* — Cases/supporting evidence (blue, underline)
+- 🟣 *hard* — Difficulty/logical turn (purple, wavy)
+- ⬜ *block* — Complete viewpoint paragraph (grey, border)
+- 🟪 *view* — Author's opinion/personal insight (purple)
+- ⚫ *outdated* — Excluded/outdated info (strikethrough)
+
+Customize highlight types:
+
+#+begin_src elisp
+(setq chai-highlight-types
+      '(("important" . chai-highlight-important)
+        ("idea" . chai-highlight-idea)
+        ("key" . chai-highlight-key)
+        ;; ... add custom types
+        ("todo" . hl-line)))
+#+end_src
+
+** Context Panel
+
+Press =C-c p= to toggle a side window showing all highlights grouped by type. The current highlight's group is highlighted for easy navigation.
+
+** Save Modes
+
+*** Multi-File Mode (Default)
+
+Save each note as a separate Org file:
+
+#+begin_src elisp
+(setq chai-note-saving-style 'multi-file)
+(setq chai-notes-directory "~/notes/chai/")
+#+end_src
+
+*** Single-File Mode
+
+Append all notes to a unified file:
+
+#+begin_src elisp
+(setq chai-note-saving-style 'single-file)
+(setq chai-unified-notes-file "~/notes/chai-notes.org")
+#+end_src
+
+* Quick Start
+
+1. *Prepare materials* — Put PDF/EPUB/Markdown files in inbox directory
+2. *Import* — Run =M-x chai-library-import=
+3. *Open Library* — =M-x chai-library-open=, press =RET= to open document
+4. *Dismantle* — Navigate to a heading you want to excerpt, =M-x chai-refine-heading=
+5. *Process* — Rewrite and compress content in Refinery
+6. *Save* — =C-c C-c= to save as permanent note
+
+* Link System
+
+Chai uses the =chai:= link protocol for knowledge association:
+
+- In Refinery, the =SOURCE= property automatically tracks content origin
+- Highlighted text uses =[[chai:TYPE:NOTE][text]]= format
+- Click highlights to jump to the original source (if from Library books)
+
+* Integration with Other Tools
+
+Chai is designed to work alongside existing note-taking systems:
+
+- *Org-roam* — Save Refinery notes to Org-roam directory
+- *Denote* — Chai uses Denote-compatible timestamp IDs
+- *Citar/Org-cite* — Add =#+BIBLIOGRAPHY= references in book files
+
+* Contributing
+
+Issues and PRs welcome!
+
+- Code style: Follow standard Emacs Lisp conventions
+- Tests: Add tests in =test/= directory for new features
+- Documentation: Update this README to reflect changes
+
+* License
+
+GPL-3.0-or-later
+
+* Author
+
+Yibie <yibie@outlook.com>
+
+* Acknowledgments
+
+- Design philosophy inspired by Zettelkasten and Progressive Summarization
+- tp.el provides responsive UI support
+
+* Changelog
+
+** v1.1.0 (2026-02)
+
+- *Library*: Add =k= keybinding to set keywords for a book; keywords are
+  encoded in the filename (===kw1_kw2= section) and searchable via =/=
+- *Library*: Fix keywords column not refreshing after changes
+- *Library*: Open in full-frame window (=delete-other-windows=)
+- *Annotations*: Automatically render note overlays in any Org buffer
+  containing chai links, without requiring =chai-mode= to be active
+
+** v1.0.0 (2025-01)
+
+- Initial release
+- Library knowledge base management
+- Refinery workbench
+- Highlighting and linking system
+- Context Panel for structured annotation review
+- macOS OCR support

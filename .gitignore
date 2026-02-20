@@ -1,0 +1,17 @@
+# Claude Code session data
+.claude/
+
+# Phrase workflow data
+.phrase/
+
+# Emacs backup files
+*~
+\#*\#
+.\#*
+
+# Byte-compiled files
+*.elc
+
+# Test artifacts
+test-*.el
+*-test-*.el
