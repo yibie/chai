@@ -161,6 +161,7 @@ Run =M-x chai-library-open= to open the library interface (opens full-frame):
 | =C-c h= | Highlight (plain) |
 | =C-c H= | Highlight with annotation |
 | =C-c d= | Remove highlight |
+| =C-c x= | Export highlights (copy/refinery/note) |
 | =C-c p= | Toggle Context Panel |
 | =C-c C-r= | Refresh annotations |
 

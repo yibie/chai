@@ -158,6 +158,7 @@ ID__Author__Title==keyword1_keyword2--status-rating.org
 | =C-c h= | 纯高亮（无注释） |
 | =C-c H= | 高亮 + 注释 |
 | =C-c d= | 删除高亮 |
+| =C-c x= | 导出高亮（复制/Refinery/笔记） |
 | =C-c p= | 切换上下文面板 |
 | =C-c C-r= | 刷新注释显示 |
 

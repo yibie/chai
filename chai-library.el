@@ -60,7 +60,12 @@ Defaults to ~/.emacs.d/chai/library/."
   :type 'directory
   :group 'chai-library)
 
-(defvar chai-library--python-script (expand-file-name "convert-to-org.py" (file-name-directory (or load-file-name (buffer-file-name))))
+(defvar chai-library--script-dir
+  (file-name-directory (or load-file-name buffer-file-name))
+  "Directory where chai-library.el and its sibling scripts reside.
+Cached at load time so callers at runtime don't need load-file-name.")
+
+(defvar chai-library--python-script (expand-file-name "convert-to-org.py" chai-library--script-dir)
   "Path to the Python conversion script.")
 
 (defvar chai-library--cache-hash (make-hash-table :test 'equal)
@@ -181,11 +186,13 @@ separators. If the result is empty, return FALLBACK."
 
 Returns a plist: (:id :title :author :keywords :status :rating).
 ID is read from the first headline's PROPERTIES drawer :ID: (preferred)
-or from legacy #+PROPERTY: ID format (backward compatibility)."
+or from legacy #+PROPERTY: ID format (backward compatibility).
+
+NOTE: Uses fundamental-mode for speed — all patterns are plain-text regexes
+that do not require org-mode syntax tables or font-lock."
   (condition-case _
       (with-temp-buffer
-        (insert-file-contents file-path nil 0 4096)
-        (org-mode)
+        (insert-file-contents file-path nil 0 2048)
         (let ((case-fold-search t)
               id title author filetags status rating)
           ;; Read #+TITLE, #+AUTHOR, #+FILETAGS from file keywords
@@ -547,6 +554,62 @@ Used by `chai:' links."
   :type 'string
   :group 'chai-library)
 
+(defun chai-library--auto-rename-if-manageable (file-path)
+  "Auto-rename FILE-PATH to managed format if it has #+TITLE or #+AUTHOR metadata.
+Returns the new path on success, nil otherwise."
+  (let* ((meta (chai-library--read-file-metadata file-path))
+         (title (plist-get meta :title))
+         (author (plist-get meta :author)))
+    (when (or title author)
+      (let* ((id (chai-library--ensure-file-id file-path))
+             (keywords (plist-get meta :keywords))
+             (status-rating (plist-get meta :status))
+             (rating-val (plist-get meta :rating))
+             (book (chai-book-create
+                    :id id
+                    :author (or author "")
+                    :title (or title (file-name-base file-path))
+                    :keywords keywords
+                    :status (if (symbolp status-rating) status-rating nil)
+                    :rating (if (numberp rating-val) rating-val nil)
+                    :file-path file-path))
+             (new-filename (chai-library--generate-filename book))
+             (dir (file-name-directory file-path))
+             (new-path (expand-file-name new-filename dir)))
+        (if (string= (file-truename file-path) (file-truename new-path))
+            file-path
+          (when (file-exists-p new-path)
+            (message "Chai Library: Target already exists, skipping: %s" new-filename)
+            (cl-return-from chai-library--auto-rename-if-manageable nil))
+          ;; Update visiting buffer before rename
+          (when-let ((buf (get-file-buffer file-path)))
+            (with-current-buffer buf
+              (set-visited-file-name new-path t)))
+          (rename-file file-path new-path)
+          (message "Chai Library: Auto-renamed %s -> %s"
+                   (file-name-nondirectory file-path) new-filename)
+          new-path)))))
+
+(defun chai-library--auto-rename-unmanaged ()
+  "Scan library for unmanaged .org files with #+TITLE/#+AUTHOR and auto-rename them."
+  (when (file-exists-p chai-library-directory)
+    (let ((files (directory-files chai-library-directory nil "\\.org\\'")))
+      (dolist (file files)
+        (let ((file-path (expand-file-name file chai-library-directory)))
+          ;; Skip already-managed files
+          (unless (chai-library--parse-managed-filename file)
+            (condition-case err
+                (when-let ((new-path (chai-library--auto-rename-if-manageable file-path)))
+                  ;; Update scan cache
+                  (let ((book (gethash file chai-library--cache-hash)))
+                    (when book
+                      (remhash file chai-library--cache-hash)
+                      (setf (chai-book-file-path book) new-path)
+                      (puthash (file-name-nondirectory new-path) book chai-library--cache-hash))))
+              (error
+               (message "Chai Library: Auto-rename failed for %s: %s"
+                        file (error-message-string err))))))))))
+
 (defun chai-library--import-sentinel (process event)
   "Sentinel for import PROCESS, handling EVENT."
   (when (string-match-p "finished\\|exited" event)
@@ -558,11 +621,74 @@ Used by `chai:' links."
                            "Import ✓" "Import ✗"))))
       (message "Chai: Import %s" 
                (if (= 0 (process-exit-status process)) "Finished" "Failed"))
+      ;; Auto-rename imported files based on #+TITLE/#+AUTHOR metadata
+      (when (= 0 (process-exit-status process))
+        (chai-library--auto-rename-unmanaged))
       ;; Refresh library if open
       (when-let ((lib-buf (get-buffer "*Chai Library*")))
         (with-current-buffer lib-buf
           (when (fboundp 'chai-library-refresh)
             (chai-library-refresh)))))))
+
+;;;###autoload
+(defun chai-library-auto-rename-all ()
+  "Auto-rename all unmanaged files in the library.
+Runs as an async batch process to avoid freezing Emacs.
+Output is shown in *Chai Batch Rename* buffer.
+
+Scans `chai-library-directory' for .org files without the managed
+filename format (ID__Author__Title...). If a file has #+TITLE or
+#+AUTHOR metadata, it is renamed to the managed format.
+
+You can also run it from the terminal:
+  emacs --batch -l chai-library.el -l chai-library-batch-rename.el \\
+        --eval '(chai-library-batch-rename)'
+
+Use dry-run to preview:
+  emacs --batch -l chai-library.el -l chai-library-batch-rename.el \\
+        --eval '(chai-library-batch-rename t)'"
+  (interactive)
+  (unless (file-exists-p chai-library-directory)
+    (user-error "Library directory does not exist: %s" chai-library-directory))
+  (let* ((script-path (expand-file-name "chai-library-batch-rename.el"
+                                        chai-library--script-dir))
+         (buf (get-buffer-create "*Chai Batch Rename*"))
+         (elisp-dir chai-library--script-dir))
+    (unless (file-exists-p script-path)
+      (user-error "Batch script not found: %s" script-path))
+    ;; Setup output buffer
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer))
+      (special-mode)
+      (setq-local buffer-read-only nil)
+      (insert (format "[%s] Auto-rename started...\n\n" (format-time-string "%H:%M:%S"))))
+    (display-buffer buf '(display-buffer-at-bottom . ((window-height . 14))))
+    ;; Run as async process
+    (let ((proc (start-process
+                 "chai-batch-rename" buf
+                 "emacs" "--batch"
+                 "-L" elisp-dir
+                 "-l" "chai-library.el"
+                 "-l" script-path
+                 "--eval" (format "(setq chai-library-directory %S)" chai-library-directory)
+                 "--eval" "(chai-library-batch-rename)")))
+      (set-process-sentinel
+       proc
+       (lambda (p _ev)
+         (when (buffer-live-buffer buf)
+           (with-current-buffer buf
+             (goto-char (point-max))
+             (insert (format "\n--- %s ---\n"
+                             (if (= 0 (process-exit-status p))
+                                 "Done ✓" "Failed ✗"))))
+           ;; Force cache refresh in library if open
+           (when-let ((lib-buf (get-buffer "*Chai Library*")))
+             (with-current-buffer lib-buf
+               (when (fboundp 'chai-library-refresh)
+                 (setq chai-library--cache-books nil)
+                 (chai-library-refresh)))))))
+      (message "Chai: Batch rename started (see *Chai Batch Rename*)"))))
 
 ;;;###autoload
 (defun chai-library-import (&optional single-file)

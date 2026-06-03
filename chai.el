@@ -52,6 +52,17 @@ This file stores all the forked content waiting to be refined."
   :type 'file
   :group 'chai)
 
+(defcustom chai-export-search-snippet-length 100
+  "Maximum length of the search snippet used for exported per-highlight jump links.
+
+When greater than 0, exported Org content can include a secondary file link
+that searches for a short snippet of the highlight text. This is used as a
+fallback when line numbers drift after edits.
+
+Set to 0 to disable snippet links."
+  :type 'integer
+  :group 'chai)
+
 ;;; Variables
 
 (defvar-local chai-original-wc nil
@@ -255,6 +266,222 @@ body, but drop its :PROPERTIES: drawer (e.g. :CLASS:) to avoid clutter."
               (setq removed t))))))
     (string-trim-left (buffer-string))))
 
+;;; Export - Highlights
+
+(defun chai--buffer-title ()
+  "Return a reasonable title for the current buffer."
+  (or (and (eq major-mode 'org-mode)
+           (let* ((kw (org-collect-keywords '("TITLE")))
+                  (titles (cdr (assoc "TITLE" kw))))
+             (car titles)))
+      (and (buffer-file-name) (file-name-base (buffer-file-name)))
+      (buffer-name)))
+
+(defun chai--export-source-link ()
+  "Build a stable source link for the current buffer.
+
+Prefers a Chai Library ID link when the filename starts with an ID; otherwise
+falls back to a file link."
+  (let* ((file-path (buffer-file-name))
+         (title (chai--buffer-title)))
+    (cond
+     ((and file-path
+           (string-match "\\`\\([0-9]\\{14\\}\\|[0-9]\\{8\\}T[0-9]\\{6\\}\\)__"
+                         (file-name-nondirectory file-path)))
+      (format "[[chai:%s][%s]]" (match-string 1 (file-name-nondirectory file-path)) title))
+     (file-path
+      (format "[[file:%s][%s]]" file-path title))
+     (t nil))))
+
+(defun chai--export-normalize-snippet (text)
+  "Normalize TEXT for use as an Org file-link search snippet."
+  (let* ((one-line (replace-regexp-in-string "[\n\r\t]+" " " (or text "")))
+         (spaced (replace-regexp-in-string "  +" " " one-line))
+         ;; Avoid breaking Org link markup when embedded after :: in [[file:...::SNIP][...]]
+         (safe (replace-regexp-in-string "\\[\\|\\]" "" spaced)))
+    (string-trim safe)))
+
+(defun chai--export-make-file-links (file-path lnum text)
+  "Return a list (LINE-LINK SNIP-LINK) for FILE-PATH, LNUM, and TEXT.
+
+LINE-LINK jumps by line number. SNIP-LINK searches for a short snippet as a
+fallback when line numbers drift."
+  (let* ((line-link (when (and file-path lnum)
+                      (format "[[file:%s::%d][L%d]]" file-path lnum lnum)))
+         (snippet (when (and (> chai-export-search-snippet-length 0) (stringp text))
+                    (let ((s (chai--export-normalize-snippet text)))
+                      (when (and (not (string-empty-p s))
+                                 (> (length s) 6))
+                        (substring s 0 (min (length s) chai-export-search-snippet-length))))))
+         (snip-link (when (and file-path snippet)
+                      (format "[[file:%s::%s][≈]]" file-path snippet))))
+    (list line-link snip-link)))
+
+(defun chai--collect-highlights-in-scope (scope)
+  "Collect highlights for SCOPE.
+
+SCOPE is one of: 'buffer, 'region, or 'subtree."
+  (pcase scope
+    ('region
+     (if (use-region-p)
+         (save-restriction
+           (narrow-to-region (region-beginning) (region-end))
+           (chai--collect-highlights))
+       (user-error "No region selected")))
+    ('subtree
+     (unless (eq major-mode 'org-mode)
+       (user-error "Not in an Org buffer"))
+     (save-restriction
+       (org-narrow-to-subtree)
+       (chai--collect-highlights)))
+    (_
+     (chai--collect-highlights))))
+
+(defun chai--export-highlights-as-org (highlights &optional file-path)
+  "Render HIGHLIGHTS into clean Org list content.
+
+HIGHLIGHTS is a list of (TYPE NOTE TEXT LINE-NUM MATCH-BEG). FILE-PATH is used
+to generate per-highlight jump links."
+  (let ((lines '()))
+    (dolist (h highlights)
+      (let* ((type (nth 0 h))
+             (note (nth 1 h))
+             (text (nth 2 h))
+             (lnum (nth 3 h))
+             (links (chai--export-make-file-links file-path lnum text))
+             (line-link (nth 0 links))
+             (snip-link (nth 1 links))
+             (prefix (string-join (delq nil (list line-link snip-link)) " "))
+             (main (string-trim
+                    (format "- %s%s[%s] %s"
+                            (if (string-empty-p prefix) "" (concat prefix " "))
+                            ""
+                            (or type "")
+                            (or text "")))))
+        (push main lines)
+        (when (and note (not (string-empty-p note)))
+          (push (format "  - Note: %s" note) lines))))
+    (string-join (nreverse lines) "\n")))
+
+(defun chai--export-highlights-as-text (highlights &optional file-path)
+  "Render HIGHLIGHTS into plain text.
+
+HIGHLIGHTS is a list of (TYPE NOTE TEXT LINE-NUM MATCH-BEG). FILE-PATH is
+included as context when available."
+  (let ((lines '()))
+    (dolist (h highlights)
+      (let* ((note (nth 1 h))
+             (text (nth 2 h)))
+        (push (format "- %s" (or text "")) lines)
+        (when (and note (not (string-empty-p note)))
+          (push (format "-- %s" note) lines))))
+    (when (and file-path (not (string-empty-p file-path)))
+      (when lines (push "" lines))
+      (push file-path lines))
+    (string-join (nreverse lines) "\n")))
+
+;;;###autoload
+(defun chai-export-highlights-copy (&optional scope)
+  "Copy highlights to the kill ring as plain text.
+
+Scope selection precedence:
+- Active region exports the region.
+- With prefix arg, exports the current subtree.
+- Otherwise exports the whole buffer."
+  (interactive
+   (list (cond
+          ((use-region-p) 'region)
+          (current-prefix-arg 'subtree)
+          (t 'buffer))))
+  (let* ((highlights (chai--collect-highlights-in-scope scope))
+         (file-path (buffer-file-name))
+         (out (chai--export-highlights-as-text highlights file-path)))
+    (kill-new out)
+    (message "Copied %d highlight(s) as text." (length highlights))))
+
+;;;###autoload
+(defun chai-export-highlights-copy-org (&optional scope)
+  "Copy highlights to the kill ring as clean Org.
+
+Scope selection precedence:
+- Active region exports the region.
+- With prefix arg, exports the current subtree.
+- Otherwise exports the whole buffer."
+  (interactive
+   (list (cond
+          ((use-region-p) 'region)
+          (current-prefix-arg 'subtree)
+          (t 'buffer))))
+  (let* ((highlights (chai--collect-highlights-in-scope scope))
+         (file-path (buffer-file-name))
+         (out (chai--export-highlights-as-org highlights file-path)))
+    (kill-new out)
+    (message "Copied %d highlight(s) as Org." (length highlights))))
+
+;;;###autoload
+(defun chai-export-highlights-to-refinery (&optional scope)
+  "Collect highlights and create a new Chai Refinery entry.
+
+Scope selection precedence:
+- Active region exports the region.
+- With prefix arg, exports the current subtree.
+- Otherwise exports the whole buffer."
+  (interactive
+   (list (cond
+          ((use-region-p) 'region)
+          (current-prefix-arg 'subtree)
+          (t 'buffer))))
+  (let* ((highlights (chai--collect-highlights-in-scope scope))
+         (file-path (buffer-file-name))
+         (title (read-string "Refinery entry title: "
+                             (format "Highlights: %s" (chai--buffer-title))))
+         (source-link (chai--export-source-link))
+         (content (chai--export-highlights-as-org highlights file-path))
+         (marker (chai--create-refinery-entry title content source-link)))
+    (message "Exported %d highlight(s) to Refinery." (length highlights))
+    (chai--popup-and-narrow marker)))
+
+;;;###autoload
+(defun chai-export-highlights-to-note (&optional scope)
+  "Collect highlights and save them as a note, respecting `chai-note-saving-style'.
+
+Scope selection precedence:
+- Active region exports the region.
+- With prefix arg, exports the current subtree.
+- Otherwise exports the whole buffer."
+  (interactive
+   (list (cond
+          ((use-region-p) 'region)
+          (current-prefix-arg 'subtree)
+          (t 'buffer))))
+  (let* ((highlights (chai--collect-highlights-in-scope scope))
+         (file-path (buffer-file-name))
+         (title (read-string "Note title: "
+                             (format "Highlights: %s" (chai--buffer-title))))
+         (source-link (chai--export-source-link))
+         (content (chai--export-highlights-as-org highlights file-path)))
+    (if (eq chai-note-saving-style 'single-file)
+        (chai--save-append-to-file title content source-link nil)
+      (chai--save-create-new-file title content source-link nil))
+    (message "Saved %d highlight(s) as note (%s)."
+             (length highlights)
+             (if (eq chai-note-saving-style 'single-file) "append" "new file"))))
+
+;;;###autoload
+(defun chai-export-highlights-dispatch (&optional scope)
+  "Export highlights with an interactive action selector."
+  (interactive
+   (list (cond
+          ((use-region-p) 'region)
+          (current-prefix-arg 'subtree)
+          (t 'buffer))))
+  (let* ((choices '(("Copy (text)" . chai-export-highlights-copy)
+                    ("Copy (org)"  . chai-export-highlights-copy-org)
+                    ("To Refinery" . chai-export-highlights-to-refinery)
+                    ("As Note"     . chai-export-highlights-to-note)))
+         (choice (completing-read "Export highlights: " (mapcar #'car choices) nil t)))
+    (funcall (cdr (assoc choice choices)) scope)))
+
 ;;; Core Logic - Saving Refined Notes
 
 (defun chai--current-entry-is-refinable-p ()
@@ -409,6 +636,7 @@ Auto-generates filename. Prompts only if file exists."
     (define-key map (kbd "C-c h")   #'chai-highlight-region)
     (define-key map (kbd "C-c H")   #'chai-highlight-annotate)
     (define-key map (kbd "C-c d")   #'chai-remove-highlight)
+    (define-key map (kbd "C-c x")   #'chai-export-highlights-dispatch)
     (define-key map (kbd "C-c p")   #'chai-context-panel-toggle)
     (define-key map (kbd "C-c C-r") #'chai-refresh-annotations)
     map)

@@ -105,15 +105,35 @@ FIELD can be: status, rating, title, author, keywords."
 
 ;;; Reactive Update Functions
 
+(defvar chai-library--tp-layers-initialized (make-hash-table :test 'equal)
+  "Hash table tracking which book-ids have tp layers initialized.")
+
+(defun chai-library--tp-ensure-book-layers (book-id status rating)
+  "Ensure tp layers exist for BOOK-ID, creating them if needed.
+STATUS and RATING are the current values to display."
+  (unless (gethash book-id chai-library--tp-layers-initialized)
+    (chai-library--tp-define-cell-layer book-id :status)
+    (chai-library--tp-define-cell-layer book-id :rating)
+    (puthash book-id t chai-library--tp-layers-initialized))
+  ;; Always set current values (tp layers may not display until set)
+  (chai-library--tp-update-cell book-id :status
+                                 (chai-library--format-status-value (or status 'unread)))
+  (chai-library--tp-update-cell book-id :rating
+                                 (chai-library--format-rating-value (or rating 0))))
+
 (defun chai-library--update-book-status (book-id new-status)
   "Update the status display for BOOK-ID to NEW-STATUS.
+Lazily initializes tp layers on first update.
 Uses tp.el reactive variable to trigger automatic UI update."
+  (chai-library--tp-ensure-book-layers book-id new-status nil)
   (chai-library--tp-update-cell book-id :status
                                  (chai-library--format-status-value new-status)))
 
 (defun chai-library--update-book-rating (book-id new-rating)
   "Update the rating display for BOOK-ID to NEW-RATING.
+Lazily initializes tp layers on first update.
 Uses tp.el reactive variable to trigger automatic UI update."
+  (chai-library--tp-ensure-book-layers book-id nil new-rating)
   (chai-library--tp-update-cell book-id :rating
                                  (chai-library--format-rating-value new-rating)))
 
@@ -200,20 +220,13 @@ Uses tp.el reactive variable to trigger automatic UI update."
 (defun chai-library--book-to-entry (book)
   "Convert a chai-book struct to a tabulated-list entry.
 Returns (ID VECTOR).
-For managed books (with IDs), applies tp layers for reactive updates."
-  (let* ((book-id (chai-book-id book))
-         (status (chai-book-status book))
+Uses simple propertized strings for initial display.
+Tp layers are lazily created on first status/rating update."
+  (let* ((status (chai-book-status book))
          (rating (chai-book-rating book))
-         ;; Create status and rating cells
+         ;; Simple propertized cells (no tp layers for fast initial load)
          (status-cell (chai-library--format-status-value status))
          (rating-cell (chai-library--format-rating-value rating)))
-    ;; For managed books, initialize tp layers and apply layer to cells
-    (when book-id
-      (chai-library--tp-init-book book-id status rating)
-      ;; Apply tp layer to status cell (placeholder for tp to update via display property)
-      (setq status-cell (tp-set " " (chai-library--tp-layer-name book-id :status)))
-      ;; Apply tp layer to rating cell
-      (setq rating-cell (tp-set " " (chai-library--tp-layer-name book-id :rating))))
     (list book  ; Use the book struct itself as the ID for easy retrieval
           (vector
            status-cell
@@ -248,7 +261,8 @@ For managed books (with IDs), applies tp layers for reactive updates."
 ;;; Commands
 
 (defun chai-library-refresh ()
-  "Refresh the library display."
+  "Refresh the library display.
+Use `chai-library-auto-rename-all' to batch-rename unmanaged files."
   (interactive)
   (let* ((all-books (chai-library-scan))
          (books (if chai-library--filter
