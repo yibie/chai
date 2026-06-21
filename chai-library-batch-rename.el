@@ -1,4 +1,4 @@
-;;; chai-library-batch-rename.el --- Batch auto-rename unmanaged library files -*- lexical-binding: t; -*-
+;;; chai-library-batch-rename.el --- Batch auto-rename unmanaged library files -*- lexical-binding: t -*-
 ;;
 ;; Usage (from terminal, run inside the chai directory):
 ;;   emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
@@ -37,56 +37,28 @@ Designed to run in `emacs --batch' mode without UI interaction."
 
     (dolist (file files)
       (princ (format "  %s ... " file))
-
-      ;; Skip already-managed files
-      (if (chai-library--parse-managed-filename file)
-          (progn
-            (princ "SKIP (already managed)\n")
-            (setq skipped (1+ skipped)))
-
-        (let* ((file-path (expand-file-name file chai-library-directory))
-               (meta (chai-library--read-file-metadata file-path))
-               (title (plist-get meta :title))
-               (author (plist-get meta :author)))
-
-          (if (not (or title author))
-              (progn
-                (princ "SKIP (no #+TITLE or #+AUTHOR)\n")
-                (setq skipped (1+ skipped)))
-
-            ;; Has metadata - generate new filename
-            (let* ((id (or (plist-get meta :id)
-                           (chai-library--generate-id)))
-                   (book (chai-book-create
-                          :id id
-                          :author (or author "")
-                          :title (or title (file-name-base file-path))
-                          :keywords (plist-get meta :keywords)
-                          :status nil
-                          :rating nil
-                          :file-path file-path))
-                   (new-filename (chai-library--generate-filename book))
-                   (new-path (expand-file-name new-filename chai-library-directory)))
-
-              (if (and (not dry-run) (file-exists-p new-path))
-                  (progn
-                    (princ (format "ERROR (target exists: %s)\n" new-filename))
-                    (setq errors (1+ errors)))
-
-                (if dry-run
-                    (progn
-                      (princ (format "WOULD RENAME -> %s\n" new-filename))
-                      (setq renamed (1+ renamed)))
-                  ;; Ensure file has ID in PROPERTIES drawer
-                  (condition-case err
-                      (progn
-                        (chai-library--ensure-file-id file-path)
-                        (rename-file file-path new-path)
-                        (princ (format "OK -> %s\n" new-filename))
-                        (setq renamed (1+ renamed)))
-                    (error
-                     (princ (format "ERROR: %s\n" (error-message-string err)))
-                     (setq errors (1+ errors)))))))))))
+      (let* ((file-path (expand-file-name file chai-library-directory))
+             (result (chai-library--rename-to-managed file-path dry-run))
+             (status (car result))
+             (value (cdr result)))
+        (pcase status
+          ('managed
+           (princ "SKIP (already managed)\n")
+           (cl-incf skipped))
+          ('exists
+           (princ (format "ERROR (target exists: %s)\n" value))
+           (cl-incf errors))
+          ('error
+           (princ (format "ERROR: %s\n" value))
+           (cl-incf errors))
+          ('success
+           (princ (format "%s -> %s\n"
+                          (if dry-run "WOULD RENAME" "OK")
+                          (file-name-nondirectory value)))
+           (cl-incf renamed))
+          (_
+           (princ "ERROR (unknown status)\n")
+           (cl-incf errors)))))
 
     (princ (format "\nDone: %d renamed, %d skipped, %d errors\n"
                    renamed skipped errors))

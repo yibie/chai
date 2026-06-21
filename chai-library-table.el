@@ -12,76 +12,10 @@
 (require 'tabulated-list)
 (require 'cl-lib)
 (require 'seq)
-(require 'tp)
 
 (defgroup chai-library-table nil
   "Table component for Chai Library."
   :group 'chai-library)
-
-;;; tp.el Incremental Update Infrastructure
-
-(defun chai-library--tp-cell-var (book-id field)
-  "Generate a variable symbol for BOOK-ID and FIELD combination."
-  (intern (format "chai--cell-%s-%s" book-id field)))
-
-(defun chai-library--tp-layer-name (book-id field)
-  "Generate a layer name for BOOK-ID and FIELD combination."
-  (intern (format "chai-layer-%s-%s" book-id field)))
-
-(defun chai-library--tp-define-cell-layer (book-id field)
-  "Define a tp layer for BOOK-ID and FIELD with reactive variable.
-The layer uses `display' property to show the cell value."
-  (let* ((var-sym (chai-library--tp-cell-var book-id field))
-         (layer-name (chai-library--tp-layer-name book-id field)))
-    ;; Ensure variable exists
-    (unless (boundp var-sym)
-      (set var-sym ""))
-    ;; Define the layer with reactive display property
-    ;; Use tp--define-layer-internal with :props keyword
-    (tp--define-layer-internal layer-name
-      :props `(display ,(intern (concat "$" (symbol-name var-sym)))))))
-
-
-(defun chai-library--tp-update-cell (book-id field value)
-  "Update cell VALUE for BOOK-ID and FIELD.
-Uses tp.el to incrementally update the display property."
-  (let ((var-sym (chai-library--tp-cell-var book-id field)))
-    ;; Set the reactive variable, triggering tp.el auto-update
-    (set var-sym value)))
-
-;;; Utility Functions
-
-(defun chai-library--truncate-text (text max-width)
-  "Truncate TEXT to MAX-WIDTH characters.
-If text is longer than max-width, add '...' at the end."
-  (if (<= (string-width text) max-width)
-      text
-    (concat (substring text 0 (- max-width 3)) "...")))
-
-(defun chai-library--align-text (text width alignment)
-  "Align TEXT to WIDTH according to ALIGNMENT (:left, :right, :center)."
-  (let ((text-width (string-width text)))
-    (cond
-     ((>= text-width width) (substring text 0 width))
-     ((eq alignment :right)
-      (concat (make-string (- width text-width) ? ) text))
-     ((eq alignment :center)
-      (let ((left (/ (- width text-width) 2)))
-        (concat (make-string left ? ) text
-                (make-string (- (- width text-width) left) ? ))))
-     (t ;; :left or default
-      (concat text (make-string (- width text-width) ? ))))))
-
-(defun chai-library--get-cell-value (book field)
-  "Get cell value from BOOK for FIELD.
-FIELD can be: status, rating, title, author, keywords."
-  (pcase field
-    ('status (chai-library--format-status-value (chai-book-status book)))
-    ('rating (chai-library--format-rating-value (chai-book-rating book)))
-    ('title (or (chai-book-title book) "Untitled"))
-    ('author (or (chai-book-author book) ""))
-    ('keywords (string-join (or (chai-book-keywords book) nil) ", "))
-    (_ "")))
 
 ;;; Cell Formatting Functions
 
@@ -103,70 +37,23 @@ FIELD can be: status, rating, title, author, keywords."
   (propertize (make-string (or rating 0) ?★)
               'face 'chai-library-rating))
 
-;;; Reactive Update Functions
-
-(defvar chai-library--tp-layers-initialized (make-hash-table :test 'equal)
-  "Hash table tracking which book-ids have tp layers initialized.")
-
-(defun chai-library--tp-ensure-book-layers (book-id status rating)
-  "Ensure tp layers exist for BOOK-ID, creating them if needed.
-STATUS and RATING are the current values to display."
-  (unless (gethash book-id chai-library--tp-layers-initialized)
-    (chai-library--tp-define-cell-layer book-id :status)
-    (chai-library--tp-define-cell-layer book-id :rating)
-    (puthash book-id t chai-library--tp-layers-initialized))
-  ;; Always set current values (tp layers may not display until set)
-  (chai-library--tp-update-cell book-id :status
-                                 (chai-library--format-status-value (or status 'unread)))
-  (chai-library--tp-update-cell book-id :rating
-                                 (chai-library--format-rating-value (or rating 0))))
-
-(defun chai-library--update-book-status (book-id new-status)
-  "Update the status display for BOOK-ID to NEW-STATUS.
-Lazily initializes tp layers on first update.
-Uses tp.el reactive variable to trigger automatic UI update."
-  (chai-library--tp-ensure-book-layers book-id new-status nil)
-  (chai-library--tp-update-cell book-id :status
-                                 (chai-library--format-status-value new-status)))
-
-(defun chai-library--update-book-rating (book-id new-rating)
-  "Update the rating display for BOOK-ID to NEW-RATING.
-Lazily initializes tp layers on first update.
-Uses tp.el reactive variable to trigger automatic UI update."
-  (chai-library--tp-ensure-book-layers book-id nil new-rating)
-  (chai-library--tp-update-cell book-id :rating
-                                 (chai-library--format-rating-value new-rating)))
-
-(defun chai-library--tp-init-book (book-id status rating)
-  "Initialize tp layers for BOOK-ID with STATUS and RATING."
-  ;; Define layers for status and rating
-  (chai-library--tp-define-cell-layer book-id :status)
-  (chai-library--tp-define-cell-layer book-id :rating)
-  ;; Set initial values
-  (chai-library--tp-update-cell book-id :status
-                                 (chai-library--format-status-value status))
-  (chai-library--tp-update-cell book-id :rating
-                                 (chai-library--format-rating-value rating)))
-
-
 ;;; Faces
-
 
 (defface chai-library-status-reading
   '((t :inherit success))
-  "Face for books with 'reading status.")
+  "Face for books with `reading' status.")
 
 (defface chai-library-status-done
   '((t :inherit info))
-  "Face for books with 'done status.")
+  "Face for books with `done' status.")
 
 (defface chai-library-status-unread
   '((t :inherit shadow))
-  "Face for books with 'unread status.")
+  "Face for books with `unread' status.")
 
 (defface chai-library-status-archived
   '((t :inherit shadow))
-  "Face for books with 'archived status.")
+  "Face for books with `archived' status.")
 
 (defface chai-library-title
   '((t :inherit shadow))
@@ -208,6 +95,11 @@ Uses tp.el reactive variable to trigger automatic UI update."
 
 ;;; Major Mode
 
+(defun chai-library--disable-evil ()
+  "Disable Evil locally so Chai Library single-key commands work."
+  (when (fboundp 'evil-local-mode)
+    (evil-local-mode -1)))
+
 (define-derived-mode chai-library-mode tabulated-list-mode "Chai Library"
   "Major mode for viewing Chai library."
   (setq tabulated-list-format chai-library-tabulated-format)
@@ -215,16 +107,52 @@ Uses tp.el reactive variable to trigger automatic UI update."
   (setq tabulated-list-sort-key '("Time" . t))
   (add-hook 'tabulated-list-revert-hook #'chai-library-refresh nil t))
 
+(add-hook 'chai-library-mode-hook #'chai-library--disable-evil)
+
+(defvar chai-library--installed-keybindings nil
+  "Key strings currently installed from `chai-library-keybindings'.")
+
+(defcustom chai-library-keybindings
+  '(("RET" . chai-library-open-book-at-point)
+    ("/"   . chai-library-set-filter)
+    ("c"   . chai-library-clear-filter)
+    ("g"   . chai-library-refresh)
+    ("a"   . chai-library-add)
+    ("s"   . chai-library-set-status)
+    ("r"   . chai-library-set-rating)
+    ("S"   . chai-library-cycle-sort)
+    ("k"   . chai-library-set-keywords)
+    ("d"   . chai-library-delete)
+    ("0"   . chai-library-set-rating-0)
+    ("1"   . chai-library-set-rating-1)
+    ("2"   . chai-library-set-rating-2)
+    ("3"   . chai-library-set-rating-3)
+    ("4"   . chai-library-set-rating-4)
+    ("5"   . chai-library-set-rating-5))
+  "Keybindings installed in `chai-library-mode-map'.
+Set this before loading `chai-library-table', or call
+`chai-library-apply-keybindings' after changing it."
+  :type '(repeat (cons (string :tag "Key")
+                       (function :tag "Command")))
+  :group 'chai-library-table)
+
+(defun chai-library-apply-keybindings ()
+  "Apply `chai-library-keybindings' to `chai-library-mode-map'."
+  (dolist (key chai-library--installed-keybindings)
+    (define-key chai-library-mode-map (kbd key) nil))
+  (setq chai-library--installed-keybindings nil)
+  (dolist (binding chai-library-keybindings)
+    (define-key chai-library-mode-map (kbd (car binding)) (cdr binding))
+    (push (car binding) chai-library--installed-keybindings)))
+
 ;;; Data Conversion
 
 (defun chai-library--book-to-entry (book)
   "Convert a chai-book struct to a tabulated-list entry.
 Returns (ID VECTOR).
-Uses simple propertized strings for initial display.
-Tp layers are lazily created on first status/rating update."
+Uses simple propertized strings for display."
   (let* ((status (chai-book-status book))
          (rating (chai-book-rating book))
-         ;; Simple propertized cells (no tp layers for fast initial load)
          (status-cell (chai-library--format-status-value status))
          (rating-cell (chai-library--format-rating-value rating)))
     (list book  ; Use the book struct itself as the ID for easy retrieval
@@ -309,7 +237,7 @@ prevents opening a stale path (which would create an empty buffer).
 Also updates any live buffer visiting OLD-PATH and the scan cache."
   (when (and (stringp old-path) (stringp new-path) (not (string= old-path new-path)))
     ;; If the old file is currently visited, update that buffer too.
-    (when-let ((buf (get-file-buffer old-path)))
+    (when-let* ((buf (get-file-buffer old-path)))
       (with-current-buffer buf
         ;; File is already renamed on disk; just update buffer bookkeeping.
         (set-visited-file-name new-path t))))
@@ -326,6 +254,32 @@ Also updates any live buffer visiting OLD-PATH and the scan cache."
         (remhash old-name chai-library--cache-hash)
         (puthash new-name book chai-library--cache-hash)))))
 
+(defun chai-library--ensure-managed-book (book)
+  "Return BOOK after adopting its file into the managed naming format."
+  (if (chai-book-id book)
+      book
+    (let* ((old-path (chai-book-file-path book))
+           (result (chai-library--rename-to-managed old-path)))
+      (pcase (car result)
+        ('success
+         (let* ((new-path (cdr result))
+                (new-book (chai-library--parse-filename
+                           (file-name-nondirectory new-path)
+                           (file-name-directory new-path))))
+           (setf (chai-book-id book) (chai-book-id new-book))
+           (setf (chai-book-author book) (chai-book-author new-book))
+           (setf (chai-book-title book) (chai-book-title new-book))
+           (setf (chai-book-keywords book) (chai-book-keywords new-book))
+           (setf (chai-book-status book) (chai-book-status new-book))
+           (setf (chai-book-rating book) (chai-book-rating new-book))
+           (setf (chai-book-file-path book) new-path)
+           (chai-library--update-book-path-after-rename book old-path new-path)
+           book))
+        ('managed book)
+        ('exists (user-error "Target file already exists: %s" (cdr result)))
+        ('error (user-error "Cannot adopt file: %s" (cdr result)))
+        (_ (user-error "Cannot adopt file: %S" result))))))
+
 (defun chai-library-set-filter (pattern)
   "Set filter pattern."
   (interactive "sFilter pattern: ")
@@ -338,9 +292,6 @@ Also updates any live buffer visiting OLD-PATH and the scan cache."
   (setq chai-library--filter nil)
   (chai-library-refresh))
 
-;;; Keybindings
-
-(define-key chai-library-mode-map (kbd "RET") #'chai-library-open-book-at-point)
 ;;; Commands
 
 (defun chai-library-add ()
@@ -388,14 +339,15 @@ Format: ID__Author__Title.org"
                                       (mapcar #'symbol-name chai-library-status-choices)
                                       nil t))
          (status (intern status-str)))
-    (if (not book-id)
-      (user-error "Cannot set status for unmanaged file. Use 'a' to import first")
-      (let ((new-path (chai-library--rename-managed-file-state current-path status current-rating)))
-        (chai-library--update-book-path-after-rename book current-path new-path)
-        (setf (chai-book-status book) status)
-        (setf (chai-book-rating book) current-rating))
-      ;; Update reactive cell directly - tp.el will handle the UI update
-      (chai-library--update-book-status book-id status))))
+    (unless book-id
+      (setq book (chai-library--ensure-managed-book book)
+            current-path (chai-book-file-path book)
+            book-id (chai-book-id book)))
+    (let ((new-path (chai-library--rename-managed-file-state current-path status current-rating)))
+      (chai-library--update-book-path-after-rename book current-path new-path)
+      (setf (chai-book-status book) status)
+      (setf (chai-book-rating book) current-rating)
+      (chai-library-refresh))))
 
 (defun chai-library--set-rating-internal (rating)
   "Internal helper to set RATING for book at point."
@@ -403,14 +355,15 @@ Format: ID__Author__Title.org"
          (current-path (chai-book-file-path book))
          (current-status (chai-book-status book))
          (book-id (chai-book-id book)))
-    (if (not book-id)
-      (user-error "Cannot set rating for unmanaged file. Use 'a' to import first")
-      (let ((new-path (chai-library--rename-managed-file-state current-path current-status rating)))
-        (chai-library--update-book-path-after-rename book current-path new-path)
-        (setf (chai-book-status book) current-status)
-        (setf (chai-book-rating book) rating))
-      ;; Update reactive cell directly - tp.el will handle the UI update
-      (chai-library--update-book-rating book-id rating))))
+    (unless book-id
+      (setq book (chai-library--ensure-managed-book book)
+            current-path (chai-book-file-path book)
+            book-id (chai-book-id book)))
+    (let ((new-path (chai-library--rename-managed-file-state current-path current-status rating)))
+      (chai-library--update-book-path-after-rename book current-path new-path)
+      (setf (chai-book-status book) current-status)
+      (setf (chai-book-rating book) rating)
+      (chai-library-refresh))))
 
 (defun chai-library-set-rating (rating)
   "Set RATING for the book at point."
@@ -436,22 +389,6 @@ Format: ID__Author__Title.org"
     (message "Sorting by %s" next-col)
     (tabulated-list-revert)))
 
-(define-key chai-library-mode-map (kbd "/") #'chai-library-set-filter)
-(define-key chai-library-mode-map (kbd "c") #'chai-library-clear-filter)
-(define-key chai-library-mode-map (kbd "g") #'chai-library-refresh)
-(define-key chai-library-mode-map (kbd "a") #'chai-library-add)
-(define-key chai-library-mode-map (kbd "s") #'chai-library-set-status)
-(define-key chai-library-mode-map (kbd "r") #'chai-library-set-rating)
-(define-key chai-library-mode-map (kbd "S") #'chai-library-cycle-sort)
-(define-key chai-library-mode-map (kbd "k") #'chai-library-set-keywords)
-(define-key chai-library-mode-map (kbd "d") #'chai-library-delete)
-(define-key chai-library-mode-map (kbd "0") #'chai-library-set-rating-0)
-(define-key chai-library-mode-map (kbd "1") #'chai-library-set-rating-1)
-(define-key chai-library-mode-map (kbd "2") #'chai-library-set-rating-2)
-(define-key chai-library-mode-map (kbd "3") #'chai-library-set-rating-3)
-(define-key chai-library-mode-map (kbd "4") #'chai-library-set-rating-4)
-(define-key chai-library-mode-map (kbd "5") #'chai-library-set-rating-5)
-
 (defun chai-library-set-keywords ()
   "Set keywords for the book at point.
 Keywords are stored in the filename as ==keyword1_keyword2.
@@ -468,19 +405,21 @@ Input is a comma-separated list; spaces within each keyword become hyphens."
                                      (mapcar (lambda (s)
                                                (replace-regexp-in-string "[[:space:]]+" "-" (string-trim s)))
                                              (split-string new-kw-str "[,，]" t))))))
-    (if (not book-id)
-        (user-error "Cannot set keywords for unmanaged file. Use 'a' to import first")
-      (setf (chai-book-keywords book) new-keywords)
-      (let* ((new-filename (chai-library--generate-filename book))
-             (dir (file-name-directory current-path))
-             (new-path (expand-file-name new-filename dir)))
-        (unless (string= (file-truename current-path) (file-truename new-path))
-          (when (file-exists-p new-path)
-            (user-error "Target file already exists: %s" new-path))
-          (rename-file current-path new-path)
-          (chai-library--update-book-path-after-rename book current-path new-path))
-        (message "Keywords: %s" (if new-keywords (string-join new-keywords ", ") "(none)"))
-        (chai-library-refresh)))))
+    (unless book-id
+      (setq book (chai-library--ensure-managed-book book)
+            current-path (chai-book-file-path book)
+            book-id (chai-book-id book)))
+    (setf (chai-book-keywords book) new-keywords)
+    (let* ((new-filename (chai-library--generate-filename book))
+           (dir (file-name-directory current-path))
+           (new-path (expand-file-name new-filename dir)))
+      (unless (string= (file-truename current-path) (file-truename new-path))
+        (when (file-exists-p new-path)
+          (user-error "Target file already exists: %s" new-path))
+        (rename-file current-path new-path)
+        (chai-library--update-book-path-after-rename book current-path new-path))
+      (message "Keywords: %s" (if new-keywords (string-join new-keywords ", ") "(none)"))
+      (chai-library-refresh))))
 
 (defun chai-library-delete ()
   "Delete the book file at point.
@@ -494,6 +433,7 @@ Prompts for confirmation before deleting."
       (message "Deleted: %s" file-path)
       (chai-library-refresh))))
 
+(chai-library-apply-keybindings)
 
 (provide 'chai-library-table)
 ;;; chai-library-table.el ends here

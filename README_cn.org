@@ -1,4 +1,4 @@
-#+TITLE: Chai (拆) - 破坏性阅读与知识消化
+#+TITLE: Chai (拆) - 阅读高亮与导出
 #+AUTHOR: Yibie
 #+EMAIL: yibie@outlook.com
 #+DATE: 2025-01
@@ -7,13 +7,13 @@
 
 "拆"——将复杂的知识拆解、消化、重组为自己的理解。
 
-Chai 是一个 Emacs 知识管理工作流，提供两大核心模块：
+Chai 是一个轻量级的 Emacs 阅读工作流，包含两大模块：
 
 1. *Library (知识库)* —— 管理阅读材料，支持从 PDF/Markdown/EPUB/HTML 导入
-2. *Refinery (拆解工坊)* —— 将内容"分叉"到工作台进行深度加工
+2. *Highlights (高亮)* —— 在阅读过程中标记并导出重要片段
 
 #+begin_quote
-📖 阅读 → 🔧 拆解 → ✨ 内化
+📖 阅读 → 🔖 高亮 → ✍️ 写入自己的笔记
 #+end_quote
 
 ** 演示
@@ -43,13 +43,12 @@ pip install pyobjc-framework-Vision Pillow
 (add-to-list 'load-path "~/path/to/chai/")
 
 ;; 加载核心模块
-(require 'chai)               ;; Refinery 拆解工坊
-(require 'chai-library)       ;; Library 知识库
-(require 'chai-library-table) ;; Library 表格界面
+(require 'chai)               ;; 高亮与导出
+(require 'chai-library)       ;; 知识库
+(require 'chai-library-table) ;; 知识库表格界面
 
 ;; 可选：全局快捷键
 (global-set-key (kbd "C-c l") #'chai-library-open)
-(global-set-key (kbd "C-c r") #'chai-switch-draft)
 #+end_src
 
 ** 目录结构
@@ -60,8 +59,7 @@ Chai 默认使用以下目录结构（均在 =~/.emacs.d/chai/= 下）：
 ~/.emacs.d/chai/
 ├── library/          ;; 知识库文件
 ├── inbox/            ;; 待导入文件
-├── archive/          ;; 导入后原文件归档
-└── refinery.org      ;; 拆解工作台
+└── archive/          ;; 导入后原文件归档
 #+end_example
 
 可通过以下变量自定义：
@@ -71,7 +69,6 @@ Chai 默认使用以下目录结构（均在 =~/.emacs.d/chai/= 下）：
 | =chai-library-directory= | 知识库目录 | =~/.emacs.d/chai/library/= |
 | =chai-library-import-inbox= | 导入收件箱 | =~/.emacs.d/chai/inbox/= |
 | =chai-library-import-archive= | 归档目录 | =~/.emacs.d/chai/archive/= |
-| =chai-refinery-file= | 工作台文件 | =~/.emacs.d/chai/refinery.org= |
 
 * Library (知识库)
 
@@ -117,6 +114,14 @@ ID__Author__Title==keyword1_keyword2--status-rating.org
 - ==== —— 关键词分隔
 - =--= —— 状态和评分
 
+Chai 扫描知识库目录时会自动接管未规范命名的 =.org= 文件。没有 =#+TITLE:= 或
+=#+AUTHOR:= 的文件，会使用当前文件名作为标题。也可以从终端运行批量重命名脚本：
+
+#+begin_src bash
+emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
+      --eval '(chai-library-batch-rename)'
+#+end_src
+
 ** 使用 Library
 
 运行 =M-x chai-library-open= 打开知识库界面（全屏显示）：
@@ -129,53 +134,50 @@ ID__Author__Title==keyword1_keyword2--status-rating.org
 | =s= | 设置阅读状态（unread/reading/done/archived） |
 | =r= / =0-5= | 设置评分（0-5 星） |
 | =k= | 设置关键词（逗号分隔，编码到文件名中） |
-| =a= | 重命名为 Chai 格式（添加 ID） |
+| =a= | 手动重命名/接管选中文件 |
 | =d= | 删除文件（需确认） |
 | =/= | 按标题/作者/关键词过滤 |
 | =c= | 清除过滤 |
 | =S= | 切换排序方式 |
 | =g= | 刷新列表 |
 
-* Refinery (拆解工坊)
+可以通过 =chai-library-keybindings= 自定义 Library 按键。若在加载 Chai 后修改，
+再运行 =M-x chai-library-apply-keybindings= 使其生效。
 
-** 工作流
+#+begin_src elisp
+(setq chai-library-keybindings
+      '(("RET" . chai-library-open-book-at-point)
+        ("R"   . chai-library-refresh)
+        ("K"   . chai-library-set-keywords)))
+(chai-library-apply-keybindings)
+#+end_src
 
-#+begin_example
-┌─────────────┐      ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   源文件     │ ──▶ │   分叉      │ ──▶ │   加工      │ ──▶ │   保存      │
-│  (Library)  │      │ (Refinery)  │      │  (压缩/重写) │      │  (永久笔记)  │
-└─────────────┘      └─────────────┘      └─────────────┘      └─────────────┘
-#+end_example
+* Highlights (高亮)
 
 ** 命令
 
 | 命令 | 功能 |
 |------+------|
-| =M-x chai-refine-heading= | 分叉当前标题到 Refinery |
-| =M-x chai-refine-region= | 分叉选中的区域 |
-| =M-x chai-switch-draft= | 切换/打开待处理的草稿 |
-| =C-c C-c= | 保存为永久笔记 |
-| =C-c h= | 纯高亮（无注释） |
-| =C-c H= | 高亮 + 注释 |
-| =C-c d= | 删除高亮 |
-| =C-c x= | 导出高亮（复制/Refinery/笔记） |
-| =C-c p= | 切换上下文面板 |
-| =C-c C-r= | 刷新注释显示 |
-
-** 压缩进度条
-
-在 Refinery 中编辑时，header-line 会显示实时压缩进度：
-
-#+begin_example
- 拆 45% ██████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-#+end_example
-
-[[file:pics/chai-workbench.png]]
+| =M-x chai-highlight-region= | 高亮选中区域 |
+| =M-x chai-highlight-annotate= | 高亮并添加注释 |
+| =M-x chai-remove-highlight= | 移除光标处高亮 |
+| =M-x chai-add-comment= | 输入并插入一条自由评论 |
+| =M-x chai-insert-comment= | 插入 =#+BEGIN_CHAI_COMMENT= 块 |
+| =M-x chai-export-highlights-copy= | 以纯文本复制高亮与评论 |
+| =M-x chai-export-highlights-copy-org= | 以 Org 格式复制高亮与评论 |
+| =M-x chai-export-preview= | 打开可编辑的 Org 预览 buffer |
+| =M-x chai-export-preview-save= | 直接保存 Org 导出到预览文件 |
+| =M-x chai-context-panel-toggle= | 切换高亮概览面板 |
+| =M-x chai-refresh-annotations= | 刷新注释 overlay |
 
 ** 高亮系统
 
-在阅读时标记重要内容，共 12 种语义化类型。只要 org 文件中包含 chai 链接，
-注释 overlay 会在文件打开时自动渲染，无需手动启用 =chai-mode=。
+在阅读时标记重要内容，共 12 种语义化类型。Chai 链接会使用配置好的 face
+直接渲染；悬停时 echo area 会显示类型或注释。只要 org 文件中包含 chai 链接，
+注释 overlay 会在文件打开时自动渲染。
+
+在 chai 链接上右键，可以修改类型、编辑注释、移除高亮、复制高亮文本。选中区域后
+右键，可以快速将其高亮为 =important=、=idea=、=question=、=key= 或其他类型。
 
 [[file:pics/chai-annotation.png]]
 
@@ -210,50 +212,90 @@ ID__Author__Title==keyword1_keyword2--status-rating.org
 
 ** 上下文面板
 
-按 =C-c p= 切换侧边窗口，显示当前 buffer 所有高亮按类型分组。光标所在高亮的类型组会高亮显示，方便定位。
+按 =C-c p=（绑定后）切换侧边窗口，显示当前 buffer 所有高亮按类型分组。光标所在高亮的类型组会高亮显示，方便定位。
 
-** 保存模式
+** 自由评论块
 
-*** 多文件模式（默认）
+如果有一段想法并不依附于某个具体高亮片段，可以使用 =#+BEGIN_CHAI_COMMENT= 块：
 
-每条笔记保存为独立的 Org 文件：
+#+begin_example
+#+BEGIN_CHAI_COMMENT
+这是我对上面段落的想法。
+#+END_CHAI_COMMENT
+#+end_example
 
-#+begin_src elisp
-(setq chai-note-saving-style 'multi-file)
-(setq chai-notes-directory "~/notes/chai/")
-#+end_src
+- =M-x chai-add-comment= 会提示输入评论文本，并插入完整评论块。
+- =M-x chai-insert-comment= 插入空块；若有选中区域，则将其包裹成评论块。
+- 评论块会按原文顺序与高亮一起导出。
 
-*** 单文件模式
+** 导出格式
 
-所有笔记追加到统一的文件中：
+Chai 区分*输入/存储语法*（阅读时直接写的标记）和*导出语法*（复制到 kill-ring 或在预览 buffer 中展示的内容）。
 
-#+begin_src elisp
-(setq chai-note-saving-style 'single-file)
-(setq chai-unified-notes-file "~/notes/chai-notes.org")
-#+end_src
+存储语法：
+- 高亮文本：=[[chai:TYPE][TEXT]]=
+- 带注释的高亮：=[[chai:TYPE:NOTE][TEXT]]=
+- 自由评论块：=#+BEGIN_CHAI_COMMENT= ... =#+END_CHAI_COMMENT=
+
+=M-x chai-export-highlights-copy-org= 将高亮以按原文顺序排列的 Org headline 形式复制到 kill-ring。每种高亮类型会转换为大写的 TODO 状态，源文件元数据放在 =:PROPERTIES:= 抽屉里。=#+SEQ_TODO:= 行根据你的 =chai-highlight-types= 动态生成，并在末尾追加 =COMMENT= 以容纳自由批注。
+
+=M-x chai-export-preview= 则把同样的导出结果放进可编辑的 =*Chai Export Preview*= buffer。该 buffer 会关联到 =~/.emacs.d/chai/exports/<源文件名>_chai.org=（可通过 =chai-export-preview-directory= 自定义），你可以直接编辑并按 =C-x C-s= 正常保存。预览命令本身不会写入文件。
+
+=M-x chai-export-preview-save= 会直接把同样的导出内容写入该预览文件。
+
+#+begin_example
+#+TITLE: 原文标题
+#+SOURCE: /path/to/source.org
+#+EXPORTED_AT: 2026-06-21 12:30
+#+SEQ_TODO: IMPORTANT IDEA QUESTION KEY COMMENT
+
+* IMPORTANT 原文高亮文本
+:PROPERTIES:
+:SOURCE: [[file:/path/to/source.org::25][L25]]
+:END:
+#+end_example
+
+带注释的高亮会把注释放在 headline 下方的 =#+BEGIN_CHAI_ANNOTATION= 块内：
+
+#+begin_example
+* IDEA 原文高亮文本
+:PROPERTIES:
+:SOURCE: [[file:/path/to/source.org::25][L25]]
+:END:
+#+BEGIN_CHAI_ANNOTATION
+annotation 文本
+#+END_CHAI_ANNOTATION
+#+end_example
+
+自由评论导出为 =COMMENT= headline：
+
+#+begin_example
+* COMMENT 自由批注文本
+:PROPERTIES:
+:SOURCE: [[file:/path/to/source.org::120][L120]]
+:END:
+#+end_example
 
 * 快速入门
 
 1. *准备材料* —— 将 PDF/EPUB/Markdown 文件放入 inbox 目录
 2. *导入* —— 运行 =M-x chai-library-import=
 3. *打开 Library* —— =M-x chai-library-open=，按 =RET= 打开文档
-4. *拆解* —— 在文档中定位到想摘录的标题，=M-x chai-refine-heading=
-5. *加工* —— 在 Refinery 中重写、压缩内容
-6. *保存* —— =C-c C-c= 保存为永久笔记
+4. *高亮* —— 选中文字，运行 =M-x chai-highlight-region= 或 =M-x chai-highlight-annotate=
+5. *导出* —— 运行 =M-x chai-export-highlights-copy-org=，粘贴到自己的笔记
 
 * 链接系统
 
 Chai 使用 =chai:= 链接协议实现知识关联：
 
-- 在 Refinery 中，=SOURCE= 属性自动记录内容来源
-- 高亮文本使用 =[[chai:type][text]]= 格式
-- 点击高亮可跳转到原文（如果来源是 Library 中的书籍）
+- 高亮文本使用 =[[chai:TYPE][text]]= 或 =[[chai:TYPE:NOTE][text]]= 格式
+- 如果高亮来自 Library 中的书籍，点击可跳转到原文
 
 * 与其他工具集成
 
 Chai 设计为与现有笔记系统协同工作：
 
-- *Org-roam* —— Refinery 保存的笔记可放入 Org-roam 目录
+- *Org-roam* —— 将导出的高亮粘贴到 Org-roam 笔记
 - *Denote* —— Chai 使用与 Denote 兼容的时间戳 ID
 - *Citar/Org-cite* —— 在书籍文件中添加 =#+BIBLIOGRAPHY= 引用
 
@@ -276,9 +318,16 @@ Yibie <yibie@outlook.com>
 * 致谢
 
 - 设计理念受 Zettelkasten 和渐进式总结法启发
-- tp.el 提供响应式 UI 支持
 
 * Changelog
+
+** v2.0.0 (2026-06)
+
+- *移除 Refinery*：移除中间工作台和笔记保存流程，Chai 聚焦于知识库管理与高亮导出。
+- *移除 tp.el*：Library 表格不再依赖 tp.el，状态/评分变更后刷新标准
+  tabulated-list 显示。
+- *保留批量重命名*：将重复的自动重命名逻辑合并为单一核心函数，供交互式导入和
+  批量脚本共用。
 
 ** v1.1.0 (2026-02)
 

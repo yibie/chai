@@ -1,4 +1,4 @@
-#+TITLE: Chai (拆) - Destructive Reading and Knowledge Digestion
+#+TITLE: Chai (拆) - Highlight and Export for Reading
 #+AUTHOR: Yibie
 #+EMAIL: yibie@outlook.com
 #+DATE: 2025-01
@@ -9,13 +9,13 @@
 
 "拆" (chāi) — to dismantle, break down, and digest complex knowledge into your own understanding.
 
-Chai is an Emacs knowledge management workflow with two core modules:
+Chai is an Emacs reading workflow with two lightweight parts:
 
 1. *Library* — Manage reading materials, import from PDF/Markdown/EPUB/HTML
-2. *Refinery* — "Fork" content into a workbench for deep processing and refinement
+2. *Highlights* — Mark and export important fragments from your reading
 
 #+begin_quote
-📖 Read → 🔧 Dismantle → ✨ Internalize
+📖 Read → 🔖 Highlight → ✍️ Write your own notes
 #+end_quote
 
 ** Demo
@@ -45,13 +45,12 @@ pip install pyobjc-framework-Vision Pillow
 (add-to-list 'load-path "~/path/to/chai/")
 
 ;; Load core modules
-(require 'chai)               ;; Refinery workbench
+(require 'chai)               ;; Highlights and export
 (require 'chai-library)       ;; Library
 (require 'chai-library-table) ;; Library table interface
 
 ;; Optional: Global keybindings
 (global-set-key (kbd "C-c l") #'chai-library-open)
-(global-set-key (kbd "C-c r") #'chai-switch-draft)
 #+end_src
 
 ** Directory Structure
@@ -62,8 +61,7 @@ Chai uses the following default directory structure (under =~/.emacs.d/chai/=):
 ~/.emacs.d/chai/
 ├── library/          ;; Library files
 ├── inbox/            ;; Import inbox
-├── archive/          ;; Archived source files after import
-└── refinery.org      ;; Refinery workbench
+└── archive/          ;; Archived source files after import
 #+end_example
 
 Customize via these variables:
@@ -73,7 +71,6 @@ Customize via these variables:
 | =chai-library-directory= | Library directory | =~/.emacs.d/chai/library/= |
 | =chai-library-import-inbox= | Import inbox | =~/.emacs.d/chai/inbox/= |
 | =chai-library-import-archive= | Archive directory | =~/.emacs.d/chai/archive/= |
-| =chai-refinery-file= | Refinery file | =~/.emacs.d/chai/refinery.org= |
 
 * Library
 
@@ -119,6 +116,16 @@ Delimiter meanings:
 - ==== — Keyword separator
 - =--= — Status and rating
 
+Chai automatically adopts unmanaged =.org= files in the library directory when
+the library is scanned. Files without =#+TITLE:= or =#+AUTHOR:= use their
+current filename as the title. You can still run the batch rename script to
+normalize files from the terminal:
+
+#+begin_src bash
+emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
+      --eval '(chai-library-batch-rename)'
+#+end_src
+
 ** Using the Library
 
 Run =M-x chai-library-open= to open the library interface (opens full-frame):
@@ -131,55 +138,52 @@ Run =M-x chai-library-open= to open the library interface (opens full-frame):
 | =s= | Set reading status (unread/reading/done/archived) |
 | =r= / =0-5= | Set rating (0-5 stars) |
 | =k= | Set keywords (comma-separated, stored in filename) |
-| =a= | Rename to Chai format (add ID) |
+| =a= | Manually rename/adopt selected file |
 | =d= | Delete file (requires confirmation) |
 | =/= | Filter by title/author/keywords |
 | =c= | Clear filter |
 | =S= | Toggle sort order |
 | =g= | Refresh list |
 
-* Refinery
+Customize Library keys with =chai-library-keybindings=. If you change it after
+loading Chai, run =M-x chai-library-apply-keybindings=.
 
-** Workflow
+#+begin_src elisp
+(setq chai-library-keybindings
+      '(("RET" . chai-library-open-book-at-point)
+        ("R"   . chai-library-refresh)
+        ("K"   . chai-library-set-keywords)))
+(chai-library-apply-keybindings)
+#+end_src
 
-#+begin_example
-┌─────────────┐      ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   Source    │ ──▶ │    Fork     │ ──▶ │   Process   │ ──▶ │    Save     │
-│  (Library)  │      │ (Refinery)  │      │ (Compress/  │      │ (Permanent  │
-│             │      │             │      │  Rewrite)   │      │   Note)     │
-└─────────────┘      └─────────────┘      └─────────────┘      └─────────────┘
-#+end_example
+* Highlights
 
 ** Commands
 
 | Command | Function |
 |---------+----------|
-| =M-x chai-refine-heading= | Fork current heading to Refinery |
-| =M-x chai-refine-region= | Fork selected region |
-| =M-x chai-switch-draft= | Switch/open pending draft |
-| =C-c C-c= | Save as permanent note |
-| =C-c h= | Highlight (plain) |
-| =C-c H= | Highlight with annotation |
-| =C-c d= | Remove highlight |
-| =C-c x= | Export highlights (copy/refinery/note) |
-| =C-c p= | Toggle Context Panel |
-| =C-c C-r= | Refresh annotations |
-
-** Compression Progress
-
-While editing in Refinery, the header-line shows real-time compression progress:
-
-#+begin_example
- 拆 45% ██████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-#+end_example
-
-[[file:pics/chai-workbench.png]]
+| =M-x chai-highlight-region= | Highlight selected region |
+| =M-x chai-highlight-annotate= | Highlight selected region with note |
+| =M-x chai-remove-highlight= | Remove highlight at point |
+| =M-x chai-add-comment= | Prompt for a free-standing comment |
+| =M-x chai-insert-comment= | Insert a =#+BEGIN_CHAI_COMMENT= block |
+| =M-x chai-export-highlights-copy= | Copy highlights and comments as plain text |
+| =M-x chai-export-highlights-copy-org= | Copy highlights and comments as Org markup |
+| =M-x chai-export-preview= | Open editable Org preview buffer |
+| =M-x chai-export-preview-save= | Save Org export directly to the preview file |
+| =M-x chai-context-panel-toggle= | Toggle highlight overview panel |
+| =M-x chai-refresh-annotations= | Refresh annotation overlays |
 
 ** Highlighting System
 
-Mark important content while reading with 12 semantic types. Annotations are
-rendered automatically in any Org buffer containing chai links — no need to
-manually enable =chai-mode=.
+Mark important content while reading with 12 semantic types. Chai links are
+visibly rendered using the configured faces; hover to see the type or note in
+the echo area. Annotations are rendered automatically in any Org buffer
+containing chai links.
+
+Right-click a chai link to change type, edit the note, remove the highlight, or
+copy the highlighted text. With an active region, right-click to highlight it as
+=important=, =idea=, =question=, =key=, or another type.
 
 [[file:pics/chai-annotation.png]]
 
@@ -214,50 +218,103 @@ Customize highlight types:
 
 ** Context Panel
 
-Press =C-c p= to toggle a side window showing all highlights grouped by type. The current highlight's group is highlighted for easy navigation.
+Press =C-c p= (when bound) to toggle a side window showing all highlights
+grouped by type. The current highlight's group is highlighted for easy
+navigation.
 
-** Save Modes
+** Free-Standing Comments
 
-*** Multi-File Mode (Default)
+Use =#+BEGIN_CHAI_COMMENT= blocks for notes that are not attached to a specific
+highlighted fragment:
 
-Save each note as a separate Org file:
+#+begin_example
+#+BEGIN_CHAI_COMMENT
+This is my own thought about the section above.
+#+END_CHAI_COMMENT
+#+end_example
 
-#+begin_src elisp
-(setq chai-note-saving-style 'multi-file)
-(setq chai-notes-directory "~/notes/chai/")
-#+end_src
+- =M-x chai-add-comment= prompts for comment text and inserts a complete block.
+- =M-x chai-insert-comment= inserts an empty block, or wraps the active region.
+- Comments are collected and exported together with highlights in source order.
 
-*** Single-File Mode
+** Export Format
 
-Append all notes to a unified file:
+Chai distinguishes between *storage syntax* (what you type while reading) and
+*export syntax* (what is copied to the kill ring or shown in the preview
+buffer).
 
-#+begin_src elisp
-(setq chai-note-saving-style 'single-file)
-(setq chai-unified-notes-file "~/notes/chai-notes.org")
-#+end_src
+Storage syntax:
+- Highlighted text: =[[chai:TYPE][TEXT]]=
+- Highlighted text with annotation: =[[chai:TYPE:NOTE][TEXT]]=
+- Free-standing comment: =#+BEGIN_CHAI_COMMENT= ... =#+END_CHAI_COMMENT=
+
+=M-x chai-export-highlights-copy-org= copies highlights as source-ordered Org
+headlines. Each highlight type becomes a TODO state, and source metadata lives
+in a =:PROPERTIES:= drawer. The =#+SEQ_TODO:= line is generated dynamically from
+your =chai-highlight-types=, with =COMMENT= appended for free-standing comments.
+
+=M-x chai-export-preview= opens the same export in an editable =*Chai Export
+Preview*= buffer. The buffer is associated with
+=~/.emacs.d/chai/exports/<source-file-base>_chai.org= (customize via
+=chai-export-preview-directory=) so you can edit it and press =C-x C-s= to save
+normally. No file is written until you save.
+
+=M-x chai-export-preview-save= writes the same export directly to that file.
+
+#+begin_example
+#+TITLE: Source Title
+#+SOURCE: /path/to/source.org
+#+EXPORTED_AT: 2026-06-21 12:30
+#+SEQ_TODO: IMPORTANT IDEA QUESTION KEY COMMENT
+
+* IMPORTANT 原文高亮文本
+:PROPERTIES:
+:SOURCE: [[file:/path/to/source.org::25][L25]]
+:END:
+#+end_example
+
+Annotated highlights keep the note in a =#+BEGIN_CHAI_ANNOTATION= block under
+the headline:
+
+#+begin_example
+* IDEA 原文高亮文本
+:PROPERTIES:
+:SOURCE: [[file:/path/to/source.org::25][L25]]
+:END:
+#+BEGIN_CHAI_ANNOTATION
+annotation 文本
+#+END_CHAI_ANNOTATION
+#+end_example
+
+Free-standing comments export as =COMMENT= headlines:
+
+#+begin_example
+* COMMENT 自由批注文本
+:PROPERTIES:
+:SOURCE: [[file:/path/to/source.org::120][L120]]
+:END:
+#+end_example
 
 * Quick Start
 
 1. *Prepare materials* — Put PDF/EPUB/Markdown files in inbox directory
 2. *Import* — Run =M-x chai-library-import=
 3. *Open Library* — =M-x chai-library-open=, press =RET= to open document
-4. *Dismantle* — Navigate to a heading you want to excerpt, =M-x chai-refine-heading=
-5. *Process* — Rewrite and compress content in Refinery
-6. *Save* — =C-c C-c= to save as permanent note
+4. *Highlight* — Select text and =M-x chai-highlight-region= or =M-x chai-highlight-annotate=
+5. *Export* — =M-x chai-export-highlights-copy-org= and paste into your notes
 
 * Link System
 
 Chai uses the =chai:= link protocol for knowledge association:
 
-- In Refinery, the =SOURCE= property automatically tracks content origin
-- Highlighted text uses =[[chai:TYPE:NOTE][text]]= format
-- Click highlights to jump to the original source (if from Library books)
+- Highlighted text uses =[[chai:TYPE][text]]= or =[[chai:TYPE:NOTE][text]]= format
+- Click a highlight with a book ID to jump to the original source (if from Library books)
 
 * Integration with Other Tools
 
 Chai is designed to work alongside existing note-taking systems:
 
-- *Org-roam* — Save Refinery notes to Org-roam directory
+- *Org-roam* — Paste exported highlights into Org-roam notes
 - *Denote* — Chai uses Denote-compatible timestamp IDs
 - *Citar/Org-cite* — Add =#+BIBLIOGRAPHY= references in book files
 
@@ -280,9 +337,17 @@ Yibie <yibie@outlook.com>
 * Acknowledgments
 
 - Design philosophy inspired by Zettelkasten and Progressive Summarization
-- tp.el provides responsive UI support
 
 * Changelog
+
+** v2.0.0 (2026-06)
+
+- *Refinery removed*: The intermediate Refinery workbench and note-saving flow
+  have been removed. Chai now focuses on Library management and highlight export.
+- *tp.el removed*: Library table no longer depends on tp.el; status/rating
+  changes refresh the standard tabulated-list display.
+- *Batch rename retained*: Duplicate auto-rename logic merged into a single
+  core function used by both interactive import and the batch script.
 
 ** v1.1.0 (2026-02)
 

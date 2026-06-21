@@ -1,4 +1,4 @@
-;;; chai.el --- Destructive Reading and Knowledge Digestion -*- lexical-binding: t; -*-
+;;; chai.el --- Semantic highlights and export for Chai -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025 Yibie
 
@@ -8,19 +8,24 @@
 
 ;;; Commentary:
 
-;; This package implements the "Chai" (拆 - break down, dismantle) workflow for
-;; destructive reading and knowledge digestion. It allows users to "fork"
-;; content (headings or regions) from source files into a dedicated "refinery"
-;; (drafts inbox) for focused editing, rewriting, and compression.
-;; The refined content can then be "saved" as new, permanent notes,
-;; integrating seamlessly with existing note-taking systems like Org-roam or Denote.
+;; This package provides a lightweight highlighting and export layer for
+;; reading and digesting knowledge in Org mode.
+;;
+;; While reading a source document, mark important fragments with semantic
+;; chai links such as [[chai:key][text]] or [[chai:idea:note][text]].  The
+;; package can then export the collected highlights as plain text or clean
+;; Org markup to the kill ring, ready to be pasted into your own notes
+;; (Org-roam, Denote, etc.).
+;;
+;; Highlights are ordinary Org links, so they survive in any Org buffer
+;; without requiring a dedicated minor mode.
 
 ;;; Code:
 
 (require 'org)
 (require 'org-element)
-
-;;; Autoloads
+(require 'cl-lib)
+(require 'subr-x)
 
 ;;; Customization
 
@@ -28,751 +33,14 @@
   "Customization group for Chai (拆) package."
   :group 'org)
 
-(defcustom chai-refinery-file (expand-file-name "chai/refinery.org" user-emacs-directory)
-  "File path for the refinery (drafts inbox).
-This file stores all the forked content waiting to be refined."
-  :type 'file
-  :group 'chai)
-
-(defcustom chai-notes-directory (expand-file-name "chai/notes/" user-emacs-directory)
-  "Default directory to save new notes."
+(defcustom chai-export-preview-directory
+  (expand-file-name "chai/exports/" user-emacs-directory)
+  "Directory where `chai-export-preview' suggests saving preview files.
+Each preview file is named `<source-file-base>_chai.org'."
   :type 'directory
   :group 'chai)
 
-(defcustom chai-note-saving-style 'multi-file
-  "Determines the default saving behavior for `chai-refine-save`.
-`single-file`: Append note to `chai-unified-notes-file`.
-`multi-file`: Create a new file in `chai-notes-directory`."
-  :type '(choice (const :tag "Single File (Append)" single-file)
-                 (const :tag "Multi-File (New File)" multi-file))
-  :group 'chai)
-
-(defcustom chai-unified-notes-file (expand-file-name "chai/unified-notes.org" user-emacs-directory)
-  "The path to the single Org file used for storing all refined notes when appending."
-  :type 'file
-  :group 'chai)
-
-(defcustom chai-export-search-snippet-length 100
-  "Maximum length of the search snippet used for exported per-highlight jump links.
-
-When greater than 0, exported Org content can include a secondary file link
-that searches for a short snippet of the highlight text. This is used as a
-fallback when line numbers drift after edits.
-
-Set to 0 to disable snippet links."
-  :type 'integer
-  :group 'chai)
-
-;;; Variables
-
-(defvar-local chai-original-wc nil
-  "Original word count of the refined entry, used to calculate compression ratio.")
-
-;;; Core Logic - Refinery Management
-
-(defun chai-ensure-refinery ()
-  "Ensure the refinery file exists and has a proper header."
-  (unless (file-exists-p chai-refinery-file)
-    (let ((dir (file-name-directory chai-refinery-file)))
-      (when (and dir (not (file-exists-p dir)))
-        (make-directory dir t)))
-    (with-temp-file chai-refinery-file
-      (insert "#+TITLE: Chai Refinery (拆工作台)\n")
-      (insert "#+AUTHOR: " (user-full-name) "\n")
-      (insert "#+CATEGORY: Chai\n")
-      (insert "#+STARTUP: content\n\n")
-      (insert "* Inbox\n"))))
-
-;;; Core Logic - Source Information Extraction
-
-(defun chai--get-source-link ()
-  "Generate an Org link to the current location.
-Prioritizes Chai Library ID links ([[chai:ID][Title]]) if available.
-Falls back to standard Org ID, CUSTOM_ID, or file links.
-Returns a string: [[target][description]]."
-  (let* ((source-buffer (current-buffer))
-         (file-path (buffer-file-name source-buffer))
-         (element (org-element-at-point))
-         (title (or (org-element-property :title element)
-                    (if file-path (file-name-base file-path))
-                    "Untitled"))
-         (clean-title (if (stringp title) 
-                          (org-link-display-format title)
-                        (org-link-display-format (org-element-interpret-data title))))
-         ;; Try to get ID from standard Org property or CHAI_ID
-         (id (or (org-entry-get nil "ID" t)
-                 (org-entry-get nil "CHAI_ID" t))))
-
-    ;; If no ID found in properties, try to extract from Chai Library filename pattern
-    (unless id
-      (when (and file-path
-                 (string-match "\\`\\([0-9]\\{14\\}\\|[0-9]\\{8\\}T[0-9]\\{6\\}\\)__" 
-                               (file-name-nondirectory file-path)))
-        (setq id (match-string 1 (file-name-nondirectory file-path)))))
-    
-    (cond
-     ;; 1. Prefer Chai ID if it looks like one (14 digits or Denote-style)
-     ((and id (string-match-p "\\`\\([0-9]\\{14\\}\\|[0-9]\\{8\\}T[0-9]\\{6\\}\\)\\'" id))
-      (format "[[chai:%s][%s]]" id clean-title))
-
-     ;; 2. Standard Org ID (UUIDs etc)
-     (id
-      (format "[[id:%s][%s]]" id clean-title))
-     
-     ;; 3. Fallback to CUSTOM_ID
-     ((org-element-property :CUSTOM_ID element)
-      (format "[[file:%s::#%s][%s]]" file-path (org-element-property :CUSTOM_ID element) clean-title))
-     
-     ;; 4. Fallback to headline search
-     ((eq (org-element-type element) 'headline)
-      (format "[[file:%s::*%s][%s]]" file-path clean-title clean-title))
-     
-     ;; 5. Default to file link
-     (t
-      (format "[[file:%s][%s]]" file-path clean-title)))))
-
-(defun chai--create-refinery-entry (title content source-link)
-  "Create a refine entry in the refinery file.
-SOURCE-LINK is a standard Org link string [[target][desc]].
-Returns the marker pointing to the new entry."
-  (chai-ensure-refinery)
-  (let ((refinery-buffer (find-file-noselect chai-refinery-file))
-        (wc (with-temp-buffer (insert content) (how-many "[^[:space:]]" (point-min) (point-max)))))
-    (with-current-buffer refinery-buffer
-      (org-with-wide-buffer
-       (goto-char (point-max))
-       (unless (bolp) (insert "\n"))
-       ;; 1. Create the container heading
-       (insert "\n* TODO " title "\n")
-       (let ((entry-marker (save-excursion (forward-line -1) (point-marker))))
-         ;; 2. Insert Properties
-         (insert ":PROPERTIES:\n")
-         (insert ":CREATED: " (format-time-string "[%Y-%m-%d %a %H:%M]") "\n")
-         (insert ":SOURCE: " source-link "\n")
-         (insert ":ORIGINAL_WC: " (number-to-string wc) "\n")
-         (insert ":END:\n\n")
-         
-         ;; 3. Insert Content and Normalize Levels
-         (let ((content-start (point)))
-           (insert content "\n")
-           (let ((min-level 1000))
-             (save-excursion
-               (goto-char content-start)
-               (while (re-search-forward "^\\(\\*+\\) " nil t)
-                 (setq min-level (min min-level (- (match-end 1) (match-beginning 1))))))
-
-             (when (and (< min-level 1000) (not (= min-level 2)))
-               (let ((delta (- 2 min-level)))
-                 (save-excursion
-                   (goto-char content-start)
-                   (while (re-search-forward "^\\(\\*+\\) " nil t)
-                     (let* ((len (- (match-end 1) (match-beginning 1)))
-                            (new-len (max 1 (+ len delta))))
-                       (replace-match (concat (make-string new-len ?*) " ")))))))))
-         
-         ;; 4. Return the marker pointing to the TODO heading
-         entry-marker)))))
-
-(defun chai--popup-and-narrow (marker)
-  "Pop up the refinery buffer, go to MARKER, and narrow to the entry."
-  (let* ((buffer (marker-buffer marker)))
-    (pop-to-buffer buffer)
-    (goto-char marker)
-    (org-narrow-to-subtree)
-    (org-show-subtree)
-    ;; Enable chai-mode
-    (chai-mode 1)))
-
-;;; Commands - Forking into Refinery
-
-;;;###autoload
-(defun chai-refine-heading (&optional keep-in-place)
-  "Fork the current heading into the refinery.
-
-By default, jump to the newly created draft and narrow to its subtree for
-continued editing. With prefix arg KEEP-IN-PLACE, only create the draft without
-switching buffers."
-  (interactive "P")
-  (unless (eq major-mode 'org-mode)
-    (user-error "Not in an Org buffer"))
-  
-  (let* ((element (org-element-at-point))
-         (type (org-element-type element)))
-    
-    (unless (eq type 'headline)
-      (user-error "Not at a heading"))
-    
-    (let* ((headline-title (org-element-property :title element))
-           (clean-title
-            (org-link-display-format
-             (if (stringp headline-title)
-                 headline-title
-               (org-element-interpret-data headline-title))))
-           ;; Only keep the subtree *content* (exclude the original heading and
-           ;; its property drawer) to avoid duplicate titles in refinery.
-           (cbeg (org-element-property :contents-begin element))
-           (cend (org-element-property :contents-end element))
-           (raw-content (if (and cbeg cend)
-                            (buffer-substring-no-properties cbeg cend)
-                          ""))
-           (source-link (chai--get-source-link)))
-      (setq raw-content (chai--strip-leading-drawers raw-content))
-      (let ((marker (chai--create-refinery-entry clean-title raw-content source-link)))
-        (message "Forked '%s' to Chai Refinery." clean-title)
-        (unless keep-in-place
-          (chai--popup-and-narrow marker))))))
-
-;;;###autoload
-(defun chai-refine-region (start end &optional keep-in-place)
-  "Fork the selected region into the refinery.
-
-By default, jump to the newly created draft and narrow to it. With prefix arg
-KEEP-IN-PLACE, only create the draft without switching buffers."
-  (interactive "r\nP")
-  (unless (eq major-mode 'org-mode)
-    (user-error "Not in an Org buffer"))
-  (let* ((content (buffer-substring-no-properties start end))
-         (source-link (chai--get-source-link))
-         ;; Extract description from link for default title
-         (link-desc (when (and source-link
-                               (string-match "\\[\\[[^]]+\\]\\[\\([^]]+\\)\\]\\]" source-link))
-                      (match-string 1 source-link)))
-         (entry-title (read-string "Refine entry title: " (format "Selection from %s" (or link-desc "Source")))))
-    
-    (let ((marker (chai--create-refinery-entry entry-title content source-link)))
-      (message "Forked region to Chai Refinery.")
-      (unless keep-in-place
-        (chai--popup-and-narrow marker)))))
-
-(defun chai--strip-leading-drawers (content)
-  "Remove leading Org drawers from CONTENT.
-
-This is used when forking a headline into the refinery: we keep the headline's
-body, but drop its :PROPERTIES: drawer (e.g. :CLASS:) to avoid clutter."
-  (with-temp-buffer
-    (insert (or content ""))
-    (goto-char (point-min))
-    (let ((case-fold-search t)
-          (removed t))
-      (while removed
-        (setq removed nil)
-        (skip-chars-forward " \t\n")
-        (beginning-of-line)
-        (when (looking-at "^:\\([A-Z0-9_]+\\):[ \t]*$")
-          (let ((start (point)))
-            (when (re-search-forward "^:END:[ \t]*$" nil t)
-              (forward-line 1)
-              (delete-region start (point))
-              (setq removed t))))))
-    (string-trim-left (buffer-string))))
-
-;;; Export - Highlights
-
-(defun chai--buffer-title ()
-  "Return a reasonable title for the current buffer."
-  (or (and (eq major-mode 'org-mode)
-           (let* ((kw (org-collect-keywords '("TITLE")))
-                  (titles (cdr (assoc "TITLE" kw))))
-             (car titles)))
-      (and (buffer-file-name) (file-name-base (buffer-file-name)))
-      (buffer-name)))
-
-(defun chai--export-source-link ()
-  "Build a stable source link for the current buffer.
-
-Prefers a Chai Library ID link when the filename starts with an ID; otherwise
-falls back to a file link."
-  (let* ((file-path (buffer-file-name))
-         (title (chai--buffer-title)))
-    (cond
-     ((and file-path
-           (string-match "\\`\\([0-9]\\{14\\}\\|[0-9]\\{8\\}T[0-9]\\{6\\}\\)__"
-                         (file-name-nondirectory file-path)))
-      (format "[[chai:%s][%s]]" (match-string 1 (file-name-nondirectory file-path)) title))
-     (file-path
-      (format "[[file:%s][%s]]" file-path title))
-     (t nil))))
-
-(defun chai--export-normalize-snippet (text)
-  "Normalize TEXT for use as an Org file-link search snippet."
-  (let* ((one-line (replace-regexp-in-string "[\n\r\t]+" " " (or text "")))
-         (spaced (replace-regexp-in-string "  +" " " one-line))
-         ;; Avoid breaking Org link markup when embedded after :: in [[file:...::SNIP][...]]
-         (safe (replace-regexp-in-string "\\[\\|\\]" "" spaced)))
-    (string-trim safe)))
-
-(defun chai--export-make-file-links (file-path lnum text)
-  "Return a list (LINE-LINK SNIP-LINK) for FILE-PATH, LNUM, and TEXT.
-
-LINE-LINK jumps by line number. SNIP-LINK searches for a short snippet as a
-fallback when line numbers drift."
-  (let* ((line-link (when (and file-path lnum)
-                      (format "[[file:%s::%d][L%d]]" file-path lnum lnum)))
-         (snippet (when (and (> chai-export-search-snippet-length 0) (stringp text))
-                    (let ((s (chai--export-normalize-snippet text)))
-                      (when (and (not (string-empty-p s))
-                                 (> (length s) 6))
-                        (substring s 0 (min (length s) chai-export-search-snippet-length))))))
-         (snip-link (when (and file-path snippet)
-                      (format "[[file:%s::%s][≈]]" file-path snippet))))
-    (list line-link snip-link)))
-
-(defun chai--collect-highlights-in-scope (scope)
-  "Collect highlights for SCOPE.
-
-SCOPE is one of: 'buffer, 'region, or 'subtree."
-  (pcase scope
-    ('region
-     (if (use-region-p)
-         (save-restriction
-           (narrow-to-region (region-beginning) (region-end))
-           (chai--collect-highlights))
-       (user-error "No region selected")))
-    ('subtree
-     (unless (eq major-mode 'org-mode)
-       (user-error "Not in an Org buffer"))
-     (save-restriction
-       (org-narrow-to-subtree)
-       (chai--collect-highlights)))
-    (_
-     (chai--collect-highlights))))
-
-(defun chai--export-highlights-as-org (highlights &optional file-path)
-  "Render HIGHLIGHTS into clean Org list content.
-
-HIGHLIGHTS is a list of (TYPE NOTE TEXT LINE-NUM MATCH-BEG). FILE-PATH is used
-to generate per-highlight jump links."
-  (let ((lines '()))
-    (dolist (h highlights)
-      (let* ((type (nth 0 h))
-             (note (nth 1 h))
-             (text (nth 2 h))
-             (lnum (nth 3 h))
-             (links (chai--export-make-file-links file-path lnum text))
-             (line-link (nth 0 links))
-             (snip-link (nth 1 links))
-             (prefix (string-join (delq nil (list line-link snip-link)) " "))
-             (main (string-trim
-                    (format "- %s%s[%s] %s"
-                            (if (string-empty-p prefix) "" (concat prefix " "))
-                            ""
-                            (or type "")
-                            (or text "")))))
-        (push main lines)
-        (when (and note (not (string-empty-p note)))
-          (push (format "  - Note: %s" note) lines))))
-    (string-join (nreverse lines) "\n")))
-
-(defun chai--export-highlights-as-text (highlights &optional file-path)
-  "Render HIGHLIGHTS into plain text.
-
-HIGHLIGHTS is a list of (TYPE NOTE TEXT LINE-NUM MATCH-BEG). FILE-PATH is
-included as context when available."
-  (let ((lines '()))
-    (dolist (h highlights)
-      (let* ((note (nth 1 h))
-             (text (nth 2 h)))
-        (push (format "- %s" (or text "")) lines)
-        (when (and note (not (string-empty-p note)))
-          (push (format "-- %s" note) lines))))
-    (when (and file-path (not (string-empty-p file-path)))
-      (when lines (push "" lines))
-      (push file-path lines))
-    (string-join (nreverse lines) "\n")))
-
-;;;###autoload
-(defun chai-export-highlights-copy (&optional scope)
-  "Copy highlights to the kill ring as plain text.
-
-Scope selection precedence:
-- Active region exports the region.
-- With prefix arg, exports the current subtree.
-- Otherwise exports the whole buffer."
-  (interactive
-   (list (cond
-          ((use-region-p) 'region)
-          (current-prefix-arg 'subtree)
-          (t 'buffer))))
-  (let* ((highlights (chai--collect-highlights-in-scope scope))
-         (file-path (buffer-file-name))
-         (out (chai--export-highlights-as-text highlights file-path)))
-    (kill-new out)
-    (message "Copied %d highlight(s) as text." (length highlights))))
-
-;;;###autoload
-(defun chai-export-highlights-copy-org (&optional scope)
-  "Copy highlights to the kill ring as clean Org.
-
-Scope selection precedence:
-- Active region exports the region.
-- With prefix arg, exports the current subtree.
-- Otherwise exports the whole buffer."
-  (interactive
-   (list (cond
-          ((use-region-p) 'region)
-          (current-prefix-arg 'subtree)
-          (t 'buffer))))
-  (let* ((highlights (chai--collect-highlights-in-scope scope))
-         (file-path (buffer-file-name))
-         (out (chai--export-highlights-as-org highlights file-path)))
-    (kill-new out)
-    (message "Copied %d highlight(s) as Org." (length highlights))))
-
-;;;###autoload
-(defun chai-export-highlights-to-refinery (&optional scope)
-  "Collect highlights and create a new Chai Refinery entry.
-
-Scope selection precedence:
-- Active region exports the region.
-- With prefix arg, exports the current subtree.
-- Otherwise exports the whole buffer."
-  (interactive
-   (list (cond
-          ((use-region-p) 'region)
-          (current-prefix-arg 'subtree)
-          (t 'buffer))))
-  (let* ((highlights (chai--collect-highlights-in-scope scope))
-         (file-path (buffer-file-name))
-         (title (read-string "Refinery entry title: "
-                             (format "Highlights: %s" (chai--buffer-title))))
-         (source-link (chai--export-source-link))
-         (content (chai--export-highlights-as-org highlights file-path))
-         (marker (chai--create-refinery-entry title content source-link)))
-    (message "Exported %d highlight(s) to Refinery." (length highlights))
-    (chai--popup-and-narrow marker)))
-
-;;;###autoload
-(defun chai-export-highlights-to-note (&optional scope)
-  "Collect highlights and save them as a note, respecting `chai-note-saving-style'.
-
-Scope selection precedence:
-- Active region exports the region.
-- With prefix arg, exports the current subtree.
-- Otherwise exports the whole buffer."
-  (interactive
-   (list (cond
-          ((use-region-p) 'region)
-          (current-prefix-arg 'subtree)
-          (t 'buffer))))
-  (let* ((highlights (chai--collect-highlights-in-scope scope))
-         (file-path (buffer-file-name))
-         (title (read-string "Note title: "
-                             (format "Highlights: %s" (chai--buffer-title))))
-         (source-link (chai--export-source-link))
-         (content (chai--export-highlights-as-org highlights file-path)))
-    (if (eq chai-note-saving-style 'single-file)
-        (chai--save-append-to-file title content source-link nil)
-      (chai--save-create-new-file title content source-link nil))
-    (message "Saved %d highlight(s) as note (%s)."
-             (length highlights)
-             (if (eq chai-note-saving-style 'single-file) "append" "new file"))))
-
-;;;###autoload
-(defun chai-export-highlights-dispatch (&optional scope)
-  "Export highlights with an interactive action selector."
-  (interactive
-   (list (cond
-          ((use-region-p) 'region)
-          (current-prefix-arg 'subtree)
-          (t 'buffer))))
-  (let* ((choices '(("Copy (text)" . chai-export-highlights-copy)
-                    ("Copy (org)"  . chai-export-highlights-copy-org)
-                    ("To Refinery" . chai-export-highlights-to-refinery)
-                    ("As Note"     . chai-export-highlights-to-note)))
-         (choice (completing-read "Export highlights: " (mapcar #'car choices) nil t)))
-    (funcall (cdr (assoc choice choices)) scope)))
-
-;;; Core Logic - Saving Refined Notes
-
-(defun chai--current-entry-is-refinable-p ()
-  "Check if the current buffer is `chai-refinery-file` and the cursor is at a valid entry."
-  (let ((current-file (and (buffer-file-name) (file-truename (buffer-file-name))))
-        (refinery-file (file-truename chai-refinery-file)))
-    (and (string= current-file refinery-file)
-         (save-excursion
-           (ignore-errors
-             (org-back-to-heading t)
-             (org-entry-get (point) "ORIGINAL_WC"))))))
-
-(defun chai--get-refinery-entry-data ()
-  "Extract data from the refinery entry at point.
-Returns a list (title content source-link tags entry-point buffer)."
-  (unless (chai--current-entry-is-refinable-p)
-    (user-error "Not at a valid refinery entry. Ensure you are in refinery.org and on a Chai TODO item"))
-  (save-excursion
-    (org-back-to-heading t)
-    (let* ((buffer (current-buffer))
-           (element (org-element-at-point))
-           (title (org-element-property :title element))
-           (tags (org-element-property :tags element))
-           (source-link (org-entry-get (point) "SOURCE"))
-           (entry-point (point))
-           ;; Extract content correctly whether narrowed or not
-           (beg (org-element-property :contents-begin element))
-           (end (org-element-property :contents-end element))
-           (content (if (and beg end) 
-                        (chai--strip-leading-drawers
-                         (buffer-substring-no-properties beg (min end (point-max))))
-                      "")))
-      (list title content source-link tags entry-point buffer))))
-
-(defun chai--save-append-to-file (title content source-link tags)
-  "Append refined entry to the unified notes file as a subtree."
-  (unless (and chai-unified-notes-file
-               (not (string-empty-p chai-unified-notes-file)))
-    (user-error "Unified notes file path is not configured"))
-  
-  (let ((notes-file (expand-file-name chai-unified-notes-file)))
-    (unless (file-exists-p notes-file)
-      (with-temp-file notes-file
-        (insert "#+TITLE: Chai Unified Notes\n")
-        (insert "#+AUTHOR: " (user-full-name) "\n")
-        (insert "#+STARTUP: content\n\n")))
-    
-    (with-current-buffer (find-file-noselect notes-file)
-      (org-with-wide-buffer
-       (goto-char (point-max))
-       (unless (bolp) (insert "\n"))
-       (insert "\n* " title)
-       (when tags
-         (let ((col (max (+ (point) 1) org-tags-column)))
-           (indent-to col)
-           (insert ":" (string-join tags ":") ":")))
-       (insert "\n")
-       (insert ":PROPERTIES:\n")
-       (insert ":CREATED: " (format-time-string "[%Y-%m-%d %a %H:%M]") "\n")
-       (when source-link (insert ":SOURCE: " source-link "\n"))
-       (insert ":END:\n\n")
-       (insert content "\n"))
-      (save-buffer)
-      (message "Appended refined entry to %s" notes-file))))
-
-(defun chai--save-create-new-file (title content source-link tags)
-  "Save refined entry as a new Org file with proper headers.
-Auto-generates filename. Prompts only if file exists."
-  (let* ((default-dir (expand-file-name chai-notes-directory))
-         (clean-title (replace-regexp-in-string "[/\\:*?\"<>|[:space:]]+" "-" title))
-         (filename (format "%s.org" clean-title))
-         (note-filepath (expand-file-name filename default-dir)))
-    
-    (unless (file-exists-p default-dir)
-      (make-directory default-dir t))
-    
-    (when (file-exists-p note-filepath)
-      ;; File exists, so we MUST prompt to avoid overwriting
-      (setq note-filepath (read-file-name "File exists. Save as: " default-dir filename)))
-
-    (with-current-buffer (find-file-noselect note-filepath)
-      ;; File Headers
-      (insert (format "#+TITLE: %s\n" title))
-      (insert "#+CATEGORY: Chai Refined Note\n")
-      (insert (format "#+DATE: %s\n" (format-time-string "[%Y-%m-%d %a %H:%M]")))
-      (when tags
-        (insert (format "#+FILETAGS: :%s:\n" (string-join tags ":"))))
-      (when source-link
-        (insert (format "#+PROPERTY: SOURCE %s\n" source-link)))
-      (insert "\n")
-      
-      ;; Content
-      (insert content "\n")
-      (save-buffer)
-      (message "Saved new note: %s" note-filepath))
-    note-filepath))
-
-(defun chai--finalize-refine-entry (original-buffer entry-point title)
-  "Internal helper to mark refinery entry as DONE and clean up metadata."
-  (with-current-buffer original-buffer
-    (goto-char entry-point)
-    (when (org-entry-is-todo-p)
-      (org-todo "DONE"))
-    (save-buffer))
-  (message "Refined entry '%s' saved and marked DONE." title))
-
-;;; Commands - Saving Refined Notes
-
-;;;###autoload
-(defun chai-refine-save-append ()
-  "Save to unified file (Append mode)."
-  (interactive)
-  (let* ((data (chai--get-refinery-entry-data))
-         (title (nth 0 data))
-         (content (nth 1 data))
-         (source-link (nth 2 data))
-         (tags (nth 3 data))
-         (entry-point (nth 4 data))
-         (original-buffer (nth 5 data)))
-
-    (chai--save-append-to-file title content source-link tags)
-    (chai--finalize-refine-entry original-buffer entry-point title)))
-
-;;;###autoload
-(defun chai-refine-save-new ()
-  "Save to new file (Creation mode)."
-  (interactive)
-  (let* ((data (chai--get-refinery-entry-data))
-         (title (nth 0 data))
-         (content (nth 1 data))
-         (source-link (nth 2 data))
-         (tags (nth 3 data))
-         (entry-point (nth 4 data))
-         (original-buffer (nth 5 data)))
-
-    (chai--save-create-new-file title content source-link tags)
-    (chai--finalize-refine-entry original-buffer entry-point title)))
-
-;;;###autoload
-(defun chai-refine-save ()
-  "Save the refined entry using the default style configured in `chai-note-saving-style'."
-  (interactive)
-  (if (eq chai-note-saving-style 'single-file)
-      (chai-refine-save-append)
-    (chai-refine-save-new)))
-
-;;; Chai Mode
-
-(defvar chai-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-c") #'chai-refine-save)
-    (define-key map (kbd "C-c h")   #'chai-highlight-region)
-    (define-key map (kbd "C-c H")   #'chai-highlight-annotate)
-    (define-key map (kbd "C-c d")   #'chai-remove-highlight)
-    (define-key map (kbd "C-c x")   #'chai-export-highlights-dispatch)
-    (define-key map (kbd "C-c p")   #'chai-context-panel-toggle)
-    (define-key map (kbd "C-c C-r") #'chai-refresh-annotations)
-    map)
-  "Keymap for chai-mode.")
-
-(defvar-local chai--header-line-saved nil
-  "Saved header-line-format before enabling chai-mode.")
-
-(defface chai-progress-bar
-  '((t :inherit region))
-  "Face for the compression progress bar in chai-mode."
-  :group 'chai)
-
-(defface chai-progress-text
-  '((t :inherit mode-line-emphasis :weight bold))
-  "Face for the text in chai-mode header line."
-  :group 'chai)
-
-(define-minor-mode chai-mode
-  "Minor mode for refining entries in the refinery."
-  :lighter "拆"
-  :keymap chai-mode-map
-
-  (if chai-mode
-      (chai-setup)
-    (chai-teardown)))
-
-(defun chai-setup ()
-  "Setup chai mode with header-line progress display."
-  (let ((wc-prop (org-entry-get nil "ORIGINAL_WC")))
-    (when wc-prop
-      (setq chai-original-wc (string-to-number wc-prop))))
-  (setq chai--header-line-saved header-line-format)
-  (setq header-line-format '(:eval (chai--header-line)))
-  (chai-refresh-annotations)
-  (add-hook 'after-change-functions #'chai--after-change-refresh nil t))
-
-(defun chai-teardown ()
-  "Teardown chai mode."
-  (setq chai-original-wc nil)
-  (setq header-line-format chai--header-line-saved)
-  (when chai--refresh-timer
-    (cancel-timer chai--refresh-timer)
-    (setq chai--refresh-timer nil))
-  (chai-clear-annotations)
-  (remove-hook 'after-change-functions #'chai--after-change-refresh t))
-
-(defvar-local chai--refresh-timer nil
-  "Idle timer for debounced annotation refresh.")
-
-(defun chai--after-change-refresh (beg end _len)
-  "Schedule a debounced annotation refresh after buffer changes."
-  (when chai--refresh-timer
-    (cancel-timer chai--refresh-timer))
-  (setq chai--refresh-timer
-        (run-with-idle-timer
-         0.5 nil
-         (lambda (buf b e)
-           (when (buffer-live-p buf)
-             (with-current-buffer buf
-               (let ((line-beg (save-excursion (goto-char b) (line-beginning-position)))
-                     (line-end (save-excursion (goto-char e) (line-end-position))))
-                 (chai-clear-annotations line-beg line-end)
-                 (chai--render-note-overlays line-beg line-end)))))
-         (current-buffer) beg end)))
-
-;;;###autoload
-(defun chai-recalculate-original-wc ()
-  "Recalculate and update ORIGINAL_WC for current refinery entry.
-Use this to fix entries created with old word-counting algorithm."
-  (interactive)
-  (unless (chai--current-entry-is-refinable-p)
-    (user-error "Not at a valid refinery entry"))
-  (save-excursion
-    (org-back-to-heading t)
-    (let* ((element (org-element-at-point))
-           (beg (org-element-property :contents-begin element))
-           (end (org-element-property :contents-end element))
-           (new-wc (if (and beg end)
-                       (how-many "[^[:space:]]" beg (min end (point-max)))
-                     0)))
-      (org-entry-put (point) "ORIGINAL_WC" (number-to-string new-wc))
-      (setq chai-original-wc new-wc)
-      (message "Updated ORIGINAL_WC to %d (based on current content)" new-wc))))
-
-(defun chai--header-line ()
-  "Generate header-line with compression progress bar."
-  (if (and chai-original-wc (> chai-original-wc 0))
-      (let* ((current-wc (how-many "[^[:space:]]" (point-min) (point-max)))
-             (ratio (max 0 (min 100 (* 100 (- 1 (/ (float current-wc) chai-original-wc))))))
-             (width (- (window-width) 10))
-             (filled (truncate (* width (/ ratio 100.0))))
-             (empty (- width filled))
-             (bar (concat (propertize (make-string filled ?█) 'face 'chai-progress-bar)
-                          (make-string empty ?░)))
-             (text (format " 拆 %d%% " (truncate ratio))))
-        (concat (propertize text 'face 'chai-progress-text) bar))
-    (propertize " 拆 Refinery " 'face 'chai-progress-text)))
-
-;;; Commands - Navigation
-
-;;;###autoload
-(defun chai-switch-draft ()
-  "Select an active draft from the refinery and open it in focused mode.
-Lists all TODO entries in the refinery."
-  (interactive)
-  (chai-ensure-refinery)
-  (let ((refinery-buffer (find-file-noselect chai-refinery-file))
-        (candidates '()))
-
-    (with-current-buffer refinery-buffer
-      (save-excursion
-        (goto-char (point-min))
-        (while (re-search-forward "^\\*+ +TODO +\\(.*\\)$" nil t)
-          (let* ((title (string-trim (match-string-no-properties 1)))
-                 (heading-pos (match-beginning 0))
-                 (marker (save-excursion (goto-char heading-pos) (point-marker)))
-                 (source (save-excursion
-                           (goto-char heading-pos)
-                           (org-entry-get (point) "SOURCE")))
-                 ;; Extract title from source link for display
-                 (source-title (when (and source (string-match "\\[\\[[^]]+\\]\\[\\([^]]+\\)\\]\\]" source))
-                                 (match-string 1 source)))
-                 (display-str (if source-title
-                                  (format "%s  (from %s)" title source-title)
-                                title)))
-            (push (cons display-str marker) candidates)))))
-
-    (if (null candidates)
-        (message "No active drafts found.")
-      (let* ((selection (completing-read "Select Draft to Refine: " (mapcar #'car candidates) nil t))
-             (marker (cdr (assoc selection candidates))))
-        (when marker
-          (chai--popup-and-narrow marker))))))
-
-;;; Highlighting System
+;;; Faces
 
 (defgroup chai-faces nil
   "Faces for Chai highlighting."
@@ -781,84 +49,82 @@ Lists all TODO entries in the refinery."
 (defface chai-highlight-important
   '((((background dark))  :background "#5a2d2d" :extend nil)
     (((background light)) :background "#FFE0B2" :foreground "#000000" :extend nil))
-  "Face for 'important' highlights."
+  "Face for \\='important\\=' highlights."
   :group 'chai-faces)
 
 (defface chai-highlight-idea
   '((((background dark))  :background "#1e4040" :extend nil)
     (((background light)) :background "#B2DFDB" :foreground "#000000" :extend nil))
-  "Face for 'idea' highlights."
+  "Face for \\='idea\\=' highlights."
   :group 'chai-faces)
 
 (defface chai-highlight-question
   '((((background dark))  :background "#1e3050" :extend nil)
     (((background light)) :background "#BBDEFB" :foreground "#000000" :extend nil))
-  "Face for 'question' highlights."
+  "Face for \\='question\\=' highlights."
   :group 'chai-faces)
 
 (defface chai-highlight-critical
   '((((background dark))  :background "#4a3010" :extend nil)
     (((background light)) :background "#FFB74D" :foreground "#000000" :extend nil))
-  "Face for 'critical' highlights."
+  "Face for \\='critical\\=' highlights."
   :group 'chai-faces)
-
-;; ── 新增类型 ──────────────────────────────────────────────────────────
 
 (defface chai-highlight-key
   '((((background dark))  :background "#4a4010" :extend nil)
     (((background light)) :background "#FFFDE7" :foreground "#000000" :extend nil))
-  "Face for 'key' highlights (中心思想/主旨句, yellow)."
+  "Face for \\='key\\=' highlights."
   :group 'chai-faces)
 
 (defface chai-highlight-core
   '((((background dark))  :background "#5a2020" :extend nil)
     (((background light)) :background "#FFCCBC" :foreground "#000000" :extend nil))
-  "Face for 'core' highlights (定义/核心考点, red/orange)."
+  "Face for \\='core\\=' highlights."
   :group 'chai-faces)
 
 (defface chai-highlight-detail
   '((((background dark))  :background "#1a3a28" :extend nil)
     (((background light)) :background "#DCEDC8" :foreground "#000000" :extend nil))
-  "Face for 'detail' highlights (数据/细节, blue/green, underline)."
+  "Face for \\='detail\\=' highlights."
   :group 'chai-faces)
 
 (defface chai-highlight-example
   '((((background dark))  :background "#1a2e3a" :extend nil)
     (((background light)) :background "#E3F2FD" :foreground "#000000" :extend nil))
-  "Face for 'example' highlights (案例/辅助证据, blue/green, underline)."
+  "Face for \\='example\\=' highlights."
   :group 'chai-faces)
 
 (defface chai-highlight-hard
   '((((background dark))  :background "#2e1e3a" :extend nil)
     (((background light)) :background "#EDE7F6" :foreground "#000000" :extend nil))
-  "Face for 'hard' highlights (难点/逻辑转折, purple, wavy underline)."
+  "Face for \\='hard\\=' highlights."
   :group 'chai-faces)
 
 (defface chai-highlight-block
   '((((background dark))  :background "#1e1e2a" :extend nil)
     (((background light)) :background "#ECEFF1" :foreground "#000000" :extend nil))
-  "Face for 'block' highlights (完整观点段落, grey, left border)."
+  "Face for \\='block\\=' highlights."
   :group 'chai-faces)
 
 (defface chai-highlight-view
   '((((background dark))  :background "#2a1e3a" :extend nil)
     (((background light)) :background "#F3E5F5" :foreground "#000000" :extend nil))
-  "Face for 'view' highlights (作者观点/个人心得, purple/grey)."
+  "Face for \\='view\\=' highlights."
   :group 'chai-faces)
 
 (defface chai-highlight-outdated
   '((((background dark))  :foreground "#666666" :strike-through t :extend nil)
     (((background light)) :foreground "#9E9E9E" :strike-through t :extend nil))
-  "Face for 'outdated' highlights (排除/过时信息, strikethrough)."
+  "Face for \\='outdated\\=' highlights."
   :group 'chai-faces)
 
 (defcustom chai-highlight-types
-  '(;; 原有类型
+  '(;; Original types
     ("important" . chai-highlight-important)
     ("idea"      . chai-highlight-idea)
     ("question"  . chai-highlight-question)
     ("critical"  . chai-highlight-critical)
-    ;; 新增类型
+    ;; Extended types
     ("key"       . chai-highlight-key)
     ("core"      . chai-highlight-core)
     ("detail"    . chai-highlight-detail)
@@ -875,6 +141,7 @@ face symbol to use for display."
                 :value-type (face :tag "Face"))
   :group 'chai)
 
+;;; Link Protocol
 
 (defun chai-link-face (path)
   "Return the face for the given chai link PATH."
@@ -904,10 +171,209 @@ BACKEND is the export backend."
     (format "\\textbf{%s}" description))
    (t description)))
 
+(defun chai-link-help-echo-at-point ()
+  "Return help echo text for the chai link at point, or nil."
+  (let ((elem (ignore-errors (org-element-context))))
+    (when (and elem
+               (eq (org-element-type elem) 'link)
+               (string= (org-element-property :type elem) "chai"))
+      (let* ((path (org-element-property :path elem))
+             (parsed (chai-parse-link-path path))
+             (type (car parsed))
+             (note (cdr parsed)))
+        (if note
+            (format "Chai note (%s): %s" type note)
+          (format "Chai: %s" type))))))
+
+(defun chai-link-help-echo (window _object pos)
+  "Return help echo text for the chai link at POS in WINDOW."
+  (with-current-buffer (window-buffer window)
+    (save-excursion
+      (goto-char pos)
+      (chai-link-help-echo-at-point))))
+
 (org-link-set-parameters "chai"
-                         :face #'chai-link-face
+                         :face 'chai-link-face
+                         :mouse-face 'highlight
+                         :help-echo #'chai-link-help-echo
                          :follow #'chai-link-follow
                          :export #'chai-link-export)
+
+;;; Mouse / Context Menu Actions
+
+(defun chai--link-at-point-p (&optional pos)
+  "Return non-nil if point (or POS) is on a chai link."
+  (save-excursion
+    (when pos (goto-char pos))
+    (let ((elem (ignore-errors (org-element-context))))
+      (and elem
+           (eq (org-element-type elem) 'link)
+           (string= (org-element-property :type elem) "chai")))))
+
+(defun chai--link-text-at-point (&optional pos)
+  "Return the description text of the chai link at point (or POS), or nil."
+  (when (chai--link-at-point-p pos)
+    (save-excursion
+      (when pos (goto-char pos))
+      (let* ((elem (org-element-context))
+             (cbeg (org-element-property :contents-begin elem))
+             (cend (org-element-property :contents-end elem)))
+        (when (and cbeg cend)
+          (buffer-substring-no-properties cbeg cend))))))
+
+(defun chai--link-end (elem)
+  "Return the end position of link ELEM, excluding trailing whitespace."
+  (- (org-element-property :end elem)
+     (or (org-element-property :post-blank elem) 0)))
+
+(defun chai-mouse-change-type (&optional pos)
+  "Change the type of the chai highlight at point (or POS)."
+  (interactive)
+  (unless (chai--link-at-point-p pos)
+    (user-error "No chai highlight at point"))
+  (save-excursion
+    (when pos (goto-char pos))
+    (let* ((elem (org-element-context))
+           (path (org-element-property :path elem))
+           (parsed (chai-parse-link-path path))
+           (type (car parsed))
+           (note (cdr parsed))
+           (text (or (chai--link-text-at-point) ""))
+           (begin (org-element-property :begin elem))
+           (end (chai--link-end elem))
+           (new-type (completing-read "New type: "
+                                      (mapcar #'car chai-highlight-types)
+                                      nil t type)))
+      (chai-clear-annotations begin end)
+      (delete-region begin end)
+      (goto-char begin)
+      (insert (format "[[chai:%s%s][%s]]"
+                      new-type
+                      (if note (concat ":" note) "")
+                      text))
+      (chai-refresh-annotations))))
+
+(defun chai-mouse-edit-annotation (&optional pos)
+  "Edit the annotation of the chai highlight at point (or POS)."
+  (interactive)
+  (unless (chai--link-at-point-p pos)
+    (user-error "No chai highlight at point"))
+  (save-excursion
+    (when pos (goto-char pos))
+    (let* ((elem (org-element-context))
+           (path (org-element-property :path elem))
+           (parsed (chai-parse-link-path path))
+           (type (car parsed))
+           (note (cdr parsed))
+           (text (or (chai--link-text-at-point) ""))
+           (begin (org-element-property :begin elem))
+           (end (chai--link-end elem))
+           (new-note (read-string "Note: " (or note ""))))
+      (chai-clear-annotations begin end)
+      (delete-region begin end)
+      (goto-char begin)
+      (if (string-empty-p new-note)
+          (insert (format "[[chai:%s][%s]]" type text))
+        (insert (format "[[chai:%s:%s][%s]]" type new-note text)))
+      (chai-refresh-annotations))))
+
+(defun chai-mouse-remove-highlight (&optional pos)
+  "Remove the chai highlight at point (or POS)."
+  (interactive)
+  (chai-remove-highlight pos))
+
+(defun chai-mouse-copy-text (&optional pos)
+  "Copy the highlighted text of the chai link at point (or POS)."
+  (interactive)
+  (let ((text (or (chai--link-text-at-point pos)
+                  (user-error "No chai highlight at point"))))
+    (kill-new text)
+    (message "Copied: %s" text)))
+
+(defun chai-mouse-highlight-region (type)
+  "Highlight the active region with TYPE."
+  (interactive)
+  (if (use-region-p)
+      (chai-highlight-region (region-beginning) (region-end) type)
+    (user-error "No region selected")))
+
+(defun chai-mouse-highlight-important ()
+  "Highlight the active region as important."
+  (interactive)
+  (chai-mouse-highlight-region "important"))
+
+(defun chai-mouse-highlight-idea ()
+  "Highlight the active region as idea."
+  (interactive)
+  (chai-mouse-highlight-region "idea"))
+
+(defun chai-mouse-highlight-question ()
+  "Highlight the active region as question."
+  (interactive)
+  (chai-mouse-highlight-region "question"))
+
+(defun chai-mouse-highlight-key ()
+  "Highlight the active region as key."
+  (interactive)
+  (chai-mouse-highlight-region "key"))
+
+(defun chai-mouse-highlight-other ()
+  "Highlight the active region, prompting for type."
+  (interactive)
+  (if (use-region-p)
+      (call-interactively #'chai-highlight-region)
+    (user-error "No region selected")))
+
+(defun chai-context-menu (menu click)
+  "Populate MENU with Chai actions for CLICK event.
+Adds highlight actions when right-clicking a chai link, and create-highlight
+actions when a region is active.
+
+Menu commands capture the clicked position so they work even if point has moved
+after the menu was opened."
+  (save-excursion
+    (let* ((pos (posn-point (event-start click)))
+           (on-link (progn (goto-char pos) (chai--link-at-point-p))))
+      (when on-link
+        (define-key-after menu [chai-separator]
+          '(menu-item "--"))
+        (define-key-after menu [chai-change-type]
+          (list 'menu-item "Chai: change type"
+                (lambda () (interactive) (chai-mouse-change-type pos))
+                :help "Change the highlight type"))
+        (define-key-after menu [chai-edit-annotation]
+          (list 'menu-item "Chai: edit annotation"
+                (lambda () (interactive) (chai-mouse-edit-annotation pos))
+                :help "Edit the highlight annotation"))
+        (define-key-after menu [chai-remove]
+          (list 'menu-item "Chai: remove highlight"
+                (lambda () (interactive) (chai-mouse-remove-highlight pos))
+                :help "Remove this highlight"))
+        (define-key-after menu [chai-copy-text]
+          (list 'menu-item "Chai: copy text"
+                (lambda () (interactive) (chai-mouse-copy-text pos))
+                :help "Copy the highlighted text")))
+      (when (use-region-p)
+        (define-key-after menu [chai-region-separator]
+          '(menu-item "--"))
+        (define-key-after menu [chai-highlight-other]
+          '(menu-item "Highlight other..." chai-mouse-highlight-other
+                      :help "Highlight region with any type"))
+        (define-key-after menu [chai-highlight-key]
+          '(menu-item "Highlight key" chai-mouse-highlight-key
+                      :help "Highlight region as key"))
+        (define-key-after menu [chai-highlight-question]
+          '(menu-item "Highlight question" chai-mouse-highlight-question
+                      :help "Highlight region as question"))
+        (define-key-after menu [chai-highlight-idea]
+          '(menu-item "Highlight idea" chai-mouse-highlight-idea
+                      :help "Highlight region as idea"))
+        (define-key-after menu [chai-highlight-important]
+          '(menu-item "Highlight important" chai-mouse-highlight-important
+                      :help "Highlight region as important")))))
+  menu)
+
+;;; Highlight Commands
 
 ;;;###autoload
 (defun chai-highlight-region (start end type)
@@ -944,25 +410,24 @@ Format: [[chai:TYPE:NOTE][TEXT]]"
                                 (point))))
 
 ;;;###autoload
-(defun chai-remove-highlight ()
+(defun chai-remove-highlight (&optional pos)
   "Remove the chai highlight at point, restoring the plain text.
+If POS is non-nil, remove the highlight at that position instead.
 Works whether the link has a note or not."
   (interactive)
-  (let ((pos (point)))
-    ;; org-element-context finds the link element at point
+  (save-excursion
+    (when pos (goto-char pos))
     (let ((elem (org-element-context)))
-      (unless (and (eq (org-element-type elem) 'link)
+      (unless (and elem
+                   (eq (org-element-type elem) 'link)
                    (string= (org-element-property :type elem) "chai"))
         (user-error "No chai highlight at point"))
       (let* ((begin (org-element-property :begin elem))
-             (end   (org-element-property :end elem))
-             ;; The visible description text
+             (end   (chai--link-end elem))
              (text  (buffer-substring-no-properties
                      (org-element-property :contents-begin elem)
                      (org-element-property :contents-end elem))))
-        ;; Remove note overlays attached to this link
         (chai-clear-annotations begin end)
-        ;; Replace the full link with plain text
         (delete-region begin end)
         (insert text)
         (goto-char begin)))))
@@ -971,7 +436,7 @@ Works whether the link has a note or not."
 
 (defun chai-parse-link-path (path)
   "Parse a chai link PATH and return (TYPE . NOTE).
-PATH format is either 'TYPE' or 'TYPE:NOTE'."
+PATH format is either \\='TYPE\\=' or \\='TYPE:NOTE\\='."
   (let ((parts (split-string path ":" nil)))
     (cons (car parts)
           (when (cdr parts)
@@ -985,26 +450,31 @@ PATH format is either 'TYPE' or 'TYPE:NOTE'."
 
 (defun chai--render-note-overlays (start end)
   "Create after-string overlays for all chai links with notes in START..END."
-  (save-excursion
-    (goto-char start)
-    (while (re-search-forward "\\[\\[chai:\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]" end t)
-      (let* ((link-end (match-end 0))
-             (path     (match-string 1))
-             (parsed   (chai-parse-link-path path))
-             (type     (car parsed))
-             (note     (cdr parsed))
-             (face     (or (cdr (assoc type chai-highlight-types)) 'default)))
-        (when note
-          (let* ((clean-note (substring-no-properties note))
-                 (body (propertize (concat " " clean-note)
-                                   'face '(:foreground "#888888"
-                                           :slant italic
-                                           :height 0.85)))
-                 (ov   (make-overlay link-end link-end)))
-            (overlay-put ov 'after-string body)
-            (overlay-put ov 'chai-note-ov t)
-            (overlay-put ov 'priority 90)))))))
+  (org-element-map (org-element-parse-buffer) 'link
+    (lambda (elem)
+      (let* ((lbegin (org-element-property :begin elem))
+             (lend   (org-element-property :end elem)))
+        (when (and (>= lbegin start)
+                   (<= lend end)
+                   (string= (org-element-property :type elem) "chai"))
+          (let* ((path   (org-element-property :path elem))
+                 (parsed (chai-parse-link-path path))
+                 (type   (car parsed))
+                 (note   (cdr parsed))
+                 (face   (or (cdr (assoc type chai-highlight-types)) 'default)))
+            (when note
+              (let* ((clean-note (substring-no-properties note))
+                     (body (propertize (concat " " clean-note)
+                                       'face `(:inherit ,face
+                                               :foreground "#888888"
+                                               :slant italic
+                                               :height 0.85)))
+                     (ov   (make-overlay lend lend)))
+                (overlay-put ov 'after-string body)
+                (overlay-put ov 'chai-note-ov t)
+                (overlay-put ov 'priority 90)))))))))
 
+;;;###autoload
 (defun chai-refresh-annotations ()
   "Refresh all chai annotations in the current buffer."
   (interactive)
@@ -1026,20 +496,70 @@ PATH format is either 'TYPE' or 'TYPE:NOTE'."
 (defun chai--collect-highlights ()
   "Scan current buffer and return all chai highlights.
 Returns a list of (TYPE NOTE TEXT LINE-NUM MATCH-BEG)."
-  (let ((results '()))
-    (save-excursion
-      (goto-char (point-min))
-      (while (re-search-forward
-              "\\[\\[chai:\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]" nil t)
-        (let* ((path   (match-string 1))
-               (text   (match-string 2))
-               (parsed (chai-parse-link-path path))
-               (type   (car parsed))
-               (note   (cdr parsed))
-               (lnum   (line-number-at-pos (match-beginning 0)))
-               (mbeg   (match-beginning 0)))
-          (push (list type note text lnum mbeg) results))))
+  (let (results)
+    (org-element-map (org-element-parse-buffer) 'link
+      (lambda (elem)
+        (when (string= (org-element-property :type elem) "chai")
+          (let* ((path   (org-element-property :path elem))
+                 (parsed (chai-parse-link-path path))
+                 (type   (car parsed))
+                 (note   (cdr parsed))
+                 (cbeg   (org-element-property :contents-begin elem))
+                 (cend   (org-element-property :contents-end elem))
+                 (text   (if (and cbeg cend)
+                             (buffer-substring-no-properties cbeg cend)
+                           ""))
+                 (mbeg   (org-element-property :begin elem))
+                 (lnum   (line-number-at-pos mbeg)))
+            (push (list type note text lnum mbeg) results)))))
     (nreverse results)))
+
+(defun chai--collect-comments ()
+  "Scan current buffer and return all CHAI_COMMENT blocks.
+Returns a list of plists (:kind comment :text TEXT :line LINE)."
+  (let (results)
+    (org-element-map (org-element-parse-buffer) 'special-block
+      (lambda (elem)
+        (when (string= (upcase (org-element-property :type elem)) "CHAI_COMMENT")
+          (let* ((cbeg (org-element-property :contents-begin elem))
+                 (cend (org-element-property :contents-end elem))
+                 (text (if (and cbeg cend)
+                           (string-trim (buffer-substring-no-properties cbeg cend))
+                         ""))
+                 (mbeg (org-element-property :begin elem))
+                 (lnum (line-number-at-pos mbeg)))
+            (push (list :kind 'comment :text text :line lnum) results)))))
+    (nreverse results)))
+
+;;;###autoload
+(defun chai-insert-comment ()
+  "Insert a CHAI_COMMENT block.
+If a region is active, wrap the selected text in the block.
+Otherwise insert an empty block at point."
+  (interactive)
+  (let* ((region-p (use-region-p))
+         (body (if region-p
+                   (buffer-substring-no-properties (region-beginning) (region-end))
+                 ""))
+         (start (if region-p (region-beginning) (point)))
+         (end (if region-p (region-end) (point))))
+    (when region-p
+      (delete-region start end))
+    (goto-char start)
+    (insert (if (string-empty-p body)
+                "#+BEGIN_CHAI_COMMENT\n#+END_CHAI_COMMENT\n"
+              (format "#+BEGIN_CHAI_COMMENT\n%s\n#+END_CHAI_COMMENT\n" body)))
+    (forward-line -1)
+    (when (string-empty-p body)
+      (end-of-line))))
+
+;;;###autoload
+(defun chai-add-comment (text)
+  "Prompt for TEXT and insert it as a CHAI_COMMENT block at point."
+  (interactive "sComment: ")
+  (when (string-empty-p (string-trim text))
+    (user-error "Comment cannot be empty"))
+  (insert (format "#+BEGIN_CHAI_COMMENT\n%s\n#+END_CHAI_COMMENT\n" text)))
 
 (defun chai--current-highlight-type ()
   "Return the chai highlight type at point, or nil."
@@ -1053,9 +573,7 @@ Returns a list of (TYPE NOTE TEXT LINE-NUM MATCH-BEG)."
   "Render HIGHLIGHTS grouped by type into the context panel buffer.
 CURRENT-TYPE is the type at point, used for highlighting the group header."
   (let ((buf (get-buffer-create chai--context-panel-buf-name))
-        ;; Group: alist of (type . list-of-entries)
         (groups '()))
-    ;; Build groups preserving type order from chai-highlight-types
     (dolist (type-def chai-highlight-types)
       (let* ((type    (car type-def))
              (entries (cl-remove-if-not
@@ -1064,7 +582,6 @@ CURRENT-TYPE is the type at point, used for highlighting the group header."
         (when entries
           (push (cons type entries) groups))))
     (setq groups (nreverse groups))
-
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer)
@@ -1072,24 +589,19 @@ CURRENT-TYPE is the type at point, used for highlighting the group header."
           (let* ((type    (car group))
                  (entries (cdr group))
                  (face    (or (cdr (assoc type chai-highlight-types)) 'default))
-                 ;; Highlight the group header if cursor is on this type
                  (header-face (if (string= type current-type)
                                   `(:inherit ,face :inverse-video t :weight bold)
                                 `(:inherit ,face :weight bold))))
-            ;; Group header
             (insert (propertize (format " %s (%d)\n" (upcase type) (length entries))
                                 'face header-face))
-            ;; Entries
             (dolist (entry entries)
               (let* ((note (nth 1 entry))
                      (text (nth 2 entry))
                      (lnum (nth 3 entry)))
-                ;; Line number + highlighted text
                 (insert (propertize (format "  L%-4d " lnum)
                                     'face '(:foreground "#666666")))
                 (insert (propertize text 'face `(:inherit ,face)))
                 (insert "\n")
-                ;; Note (if present)
                 (when note
                   (insert (propertize (format "        %s\n" note)
                                       'face '(:foreground "#888888"
@@ -1108,7 +620,6 @@ CURRENT-TYPE is the type at point, used for highlighting the group header."
                             (chai--current-highlight-type)))
            (panel-buf     (chai--render-context-panel highlights current-type))
            (panel-win     (get-buffer-window panel-buf)))
-      ;; If panel window exists, preserve scroll position
       (when panel-win
         (with-selected-window panel-win
           (goto-char (point-min)))))))
@@ -1124,14 +635,11 @@ CURRENT-TYPE is the type at point, used for highlighting the group header."
 (defun chai-context-panel-toggle ()
   "Toggle the chai context panel side window."
   (interactive)
-  (let ((panel-buf  (get-buffer chai--context-panel-buf-name))
-        (panel-win  (get-buffer-window chai--context-panel-buf-name)))
+  (let ((panel-win (get-buffer-window chai--context-panel-buf-name)))
     (cond
-     ;; Already visible: close it
      (panel-win
       (delete-window panel-win)
       (remove-hook 'post-command-hook #'chai--schedule-context-update t))
-     ;; Open panel
      (t
       (setq chai--context-panel-source-buf (current-buffer))
       (let ((win (display-buffer-in-side-window
@@ -1146,31 +654,314 @@ CURRENT-TYPE is the type at point, used for highlighting the group header."
           (setq-local cursor-type nil)
           (setq-local truncate-lines nil)
           (read-only-mode 1)))
-      ;; Initial render
       (chai--update-context-panel)
-      ;; Install auto-update hook
       (add-hook 'post-command-hook #'chai--schedule-context-update nil t)))))
+
+;;; Export - Highlights
+
+(defun chai--export-make-file-links (file-path lnum text)
+  "Return a list with the line link for FILE-PATH and LNUM.
+TEXT is accepted for compatibility with older callers."
+  (ignore text)
+  (list (when (and file-path lnum)
+          (format "[[file:%s::%d][L%d]]" file-path lnum lnum))))
+
+(defun chai--collect-items ()
+  "Collect all Chai items (highlights and comments) sorted by line.
+Returns a list of plists.  When two items share a line, their buffer
+positions (`:beg') keep the order deterministic."
+  (let ((items '()))
+    (dolist (h (chai--collect-highlights))
+      (push (list :kind 'highlight
+                  :type (nth 0 h)
+                  :note (nth 1 h)
+                  :text (nth 2 h)
+                  :line (nth 3 h)
+                  :beg (nth 4 h))
+            items))
+    (dolist (c (chai--collect-comments))
+      (push c items))
+    (sort items (lambda (a b)
+                  (let ((la (or (plist-get a :line) 0))
+                        (lb (or (plist-get b :line) 0)))
+                    (if (/= la lb)
+                        (< la lb)
+                      (< (or (plist-get a :beg) 0)
+                         (or (plist-get b :beg) 0))))))))
+
+(defun chai--collect-items-in-scope (scope)
+  "Collect Chai items for SCOPE.
+SCOPE is one of: \\='buffer\\=, \\='region\\=, or \\='subtree\\=."
+  (pcase scope
+    ('region
+     (if (use-region-p)
+         (save-restriction
+           (narrow-to-region (region-beginning) (region-end))
+           (chai--collect-items))
+       (user-error "No region selected")))
+    ('subtree
+     (unless (eq major-mode 'org-mode)
+       (user-error "Not in an Org buffer"))
+     (save-restriction
+       (org-narrow-to-subtree)
+       (chai--collect-items)))
+    (_
+     (chai--collect-items))))
+
+(defun chai--export-todo-keywords ()
+  "Return the dynamic `#+SEQ_TODO:' value for Org export.
+The value is derived from `chai-highlight-types' with `COMMENT' appended."
+  (string-join
+   (append (mapcar (lambda (type-pair) (upcase (car type-pair)))
+                   chai-highlight-types)
+           '("COMMENT"))
+   " "))
+
+(defun chai--export-source-title (&optional file-path)
+  "Return the source title for the current export.
+Prefer the current Org buffer's #+TITLE, then FILE-PATH base name."
+  (or (and (derived-mode-p 'org-mode)
+           (cadr (assoc "TITLE" (org-collect-keywords '("TITLE")))))
+      (and file-path (file-name-base file-path))
+      "Chai Export"))
+
+(defun chai--export-file-header (file-path)
+  "Return the Org file header for an export from FILE-PATH."
+  (string-join
+   (list (concat "#+TITLE: " (chai--export-source-title file-path))
+         (concat "#+SOURCE: " (or file-path ""))
+         (concat "#+EXPORTED_AT: " (format-time-string "%Y-%m-%d %H:%M"))
+         (concat "#+SEQ_TODO: " (chai--export-todo-keywords)))
+   "\n"))
+
+(defun chai--export-one-line-title (text)
+  "Return a single-line title from TEXT, suitable for an Org headline.
+Newlines and runs of whitespace are collapsed to a single space."
+  (let* ((one-line (replace-regexp-in-string "[\n\r\t]+" " " (or text "")))
+         (spaced (replace-regexp-in-string "  +" " " one-line)))
+    (string-trim spaced)))
+
+(defun chai--export-render-source (file-path line text)
+  "Return the `:SOURCE:' property value for an item.
+FILE-PATH and LINE are used to build the line jump link.
+TEXT is accepted for compatibility with older callers."
+  (if file-path
+      (string-join (delq nil (chai--export-make-file-links file-path line text)) " ")
+    ""))
+
+(defun chai--export-render-property-drawer (file-path line text)
+  "Return a PROPERTIES drawer with `:SOURCE:' metadata."
+  (concat ":PROPERTIES:\n"
+          ":SOURCE: " (chai--export-render-source file-path line text) "\n"
+          ":END:"))
+
+(defun chai--export-render-annotation (note)
+  "Return a CHAI_ANNOTATION block for NOTE, or nil if NOTE is empty."
+  (when (and note (not (string-empty-p note)))
+    (concat "#+BEGIN_CHAI_ANNOTATION\n"
+            note "\n"
+            "#+END_CHAI_ANNOTATION")))
+
+(defun chai--export-render-headline (item file-path)
+  "Render highlight ITEM as an Org headline.
+FILE-PATH is used to generate source metadata in a property drawer.
+Multiline highlight text is collapsed in the headline title and preserved
+as body text below the property drawer."
+  (let* ((type (or (plist-get item :type) ""))
+         (text (or (plist-get item :text) ""))
+         (title (chai--export-one-line-title text))
+         (note (plist-get item :note))
+         (lnum (plist-get item :line))
+         (body '()))
+    (push (format "* %s %s" (upcase type) title) body)
+    (push (chai--export-render-property-drawer file-path lnum text) body)
+    (when (string-match-p "\n" text)
+      (push text body))
+    (let ((annotation (chai--export-render-annotation note)))
+      (when annotation
+        (push annotation body)))
+    (string-join (nreverse body) "\n")))
+
+(defun chai--export-render-comment-headline (item file-path)
+  "Render comment ITEM as a COMMENT headline.
+FILE-PATH is used to generate source metadata in a property drawer.
+Multiline comment text is collapsed in the headline title and preserved
+as body text below the property drawer."
+  (let* ((text (or (plist-get item :text) ""))
+         (title (chai--export-one-line-title text))
+         (lnum (plist-get item :line))
+         (body '()))
+    (push (if (string-empty-p title) "* COMMENT" (format "* COMMENT %s" title)) body)
+    (push (chai--export-render-property-drawer file-path lnum nil) body)
+    (when (string-match-p "\n" text)
+      (push text body))
+    (string-join (nreverse body) "\n")))
+
+(defun chai--export-items-as-org (items &optional file-path)
+  "Render ITEMS into Org headlines.
+ITEMS is a list of plists representing highlights and comments.  FILE-PATH is
+used to generate per-item source metadata."
+  (if (null items)
+      ""
+    (concat (chai--export-file-header file-path)
+            "\n\n"
+            (string-join
+             (delq nil
+                   (mapcar (lambda (item)
+                             (pcase (plist-get item :kind)
+                               ('highlight (chai--export-render-headline item file-path))
+                               ('comment
+                                (let ((text (or (plist-get item :text) "")))
+                                  (unless (string-empty-p text)
+                                    (chai--export-render-comment-headline item file-path))))
+                               (_ nil)))
+                           items))
+             "\n\n")
+            "\n")))
+
+(defun chai--export-preview-file-name (source-file)
+  "Return the preview file path for SOURCE-FILE.
+The name is `<source-file-base>_chai.org' under
+`chai-export-preview-directory'."
+  (unless source-file
+    (user-error "Source buffer has no file name"))
+  (expand-file-name
+   (concat (file-name-base source-file) "_chai.org")
+   chai-export-preview-directory))
+
+(defun chai--export-items-as-text (items &optional file-path)
+  "Render ITEMS into plain text.
+ITEMS is a list of plists representing highlights and comments.  FILE-PATH is
+included as context when available."
+  (let ((lines '()))
+    (dolist (item items)
+      (pcase (plist-get item :kind)
+        ('highlight
+         (let ((note (plist-get item :note))
+               (text (plist-get item :text)))
+           (push (format "- %s" (or text "")) lines)
+           (when (and note (not (string-empty-p note)))
+             (push (format "-- %s" note) lines))))
+        ('comment
+         (let ((text (plist-get item :text)))
+           (unless (string-empty-p text)
+             (push (format "[Comment] %s" text) lines))))
+        (_ nil)))
+    (when (and file-path (not (string-empty-p file-path)))
+      (when lines (push "" lines))
+      (push file-path lines))
+    (string-join (nreverse lines) "\n")))
+
+;;;###autoload
+(defun chai-export-highlights-copy (&optional scope)
+  "Copy highlights and comments to the kill ring as plain text.
+Scope selection precedence:
+- Active region exports the region.
+- With prefix arg, exports the current subtree.
+- Otherwise exports the whole buffer."
+  (interactive
+   (list (cond
+          ((use-region-p) 'region)
+          (current-prefix-arg 'subtree)
+          (t 'buffer))))
+  (let* ((items (chai--collect-items-in-scope scope))
+         (file-path (buffer-file-name))
+         (out (chai--export-items-as-text items file-path)))
+    (kill-new out)
+    (message "Copied %d item(s) as text." (length items))))
+
+;;;###autoload
+(defun chai-export-highlights-copy-org (&optional scope)
+  "Copy highlights and comments to the kill ring as clean Org.
+Scope selection precedence:
+- Active region exports the region.
+- With prefix arg, exports the current subtree.
+- Otherwise exports the whole buffer."
+  (interactive
+   (list (cond
+          ((use-region-p) 'region)
+          (current-prefix-arg 'subtree)
+          (t 'buffer))))
+  (let* ((items (chai--collect-items-in-scope scope))
+         (file-path (buffer-file-name))
+         (out (chai--export-items-as-org items file-path)))
+    (kill-new out)
+    (message "Copied %d item(s) as Org." (length items))))
+
+;;;###autoload
+(defun chai-export-preview (&optional scope)
+  "Open an editable Org preview buffer of the current Chai export.
+SCOPE selection mirrors `chai-export-highlights-copy-org':
+- Active region exports the region.
+- With prefix arg, exports the current subtree.
+- Otherwise exports the whole buffer."
+  (interactive
+   (list (cond
+          ((use-region-p) 'region)
+          (current-prefix-arg 'subtree)
+          (t 'buffer))))
+  (let* ((source-file (buffer-file-name))
+         (items (chai--collect-items-in-scope scope))
+         (out (chai--export-items-as-org items source-file))
+         (preview-file (chai--export-preview-file-name source-file))
+         (buf (get-buffer-create "*Chai Export Preview*")))
+    (unless (file-directory-p chai-export-preview-directory)
+      (make-directory chai-export-preview-directory t))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (when (and (buffer-modified-p)
+                   (not (y-or-n-p "Preview buffer has unsaved edits; replace it? ")))
+          (user-error "Preview update cancelled"))
+        (erase-buffer)
+        (insert out)
+        (org-mode)
+        (org-set-regexps-and-options)
+        (set-visited-file-name preview-file t nil)
+        (rename-buffer "*Chai Export Preview*" t)
+        (set-buffer-modified-p t)))
+    (pop-to-buffer buf)))
+
+;;;###autoload
+(defun chai-export-preview-save (&optional scope)
+  "Write the current Chai Org export directly to its preview file.
+Uses the same scope and file naming as `chai-export-preview'."
+  (interactive
+   (list (cond
+          ((use-region-p) 'region)
+          (current-prefix-arg 'subtree)
+          (t 'buffer))))
+  (let* ((source-file (buffer-file-name))
+         (items (chai--collect-items-in-scope scope))
+         (out (chai--export-items-as-org items source-file))
+         (preview-file (chai--export-preview-file-name source-file)))
+    (unless (file-directory-p chai-export-preview-directory)
+      (make-directory chai-export-preview-directory t))
+    (with-temp-file preview-file
+      (insert out))
+    (message "Saved Chai export: %s" preview-file)
+    preview-file))
 
 ;;; Annotation display in ordinary Org buffers
 
 (defun chai--org-buffer-render-annotations ()
-  "Render chai annotations in the current Org buffer if any chai links exist.
-Called from `org-mode-hook' so annotations are visible without enabling
-`chai-mode' (which is intended only for the refinery buffer)."
-  (when (save-excursion
-          (goto-char (point-min))
-          (re-search-forward "\\[\\[chai:" nil t))
+  "Render chai annotations in the current Org buffer if any chai links exist."
+  (when (cl-some (lambda (h) (nth 1 h))
+                 (chai--collect-highlights))
     (chai--render-note-overlays (point-min) (point-max))))
 
-(add-hook 'org-mode-hook #'chai--org-buffer-render-annotations)
+(defun chai--org-buffer-setup ()
+  "Setup Chai features in the current Org buffer."
+  (chai--org-buffer-render-annotations)
+  (when (boundp 'context-menu-functions)
+    (add-hook 'context-menu-functions #'chai-context-menu nil t)))
+
+(add-hook 'org-mode-hook #'chai--org-buffer-setup)
 
 ;;; Integration with Chai Library
 
-;; Autoload the library module commands so they are available
-;; immediately after (require 'chai), without needing to manually
-;; require 'chai-library.
 (autoload 'chai-library-open "chai-library-table" "Open the Chai Library interface." t)
 (autoload 'chai-library-open-book-by-id "chai-library" "Open book by ID." t)
 
 (provide 'chai)
+
 ;;; chai.el ends here
