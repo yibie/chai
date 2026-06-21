@@ -374,6 +374,31 @@ Binds a small `chai-highlight-types' and freezes the exported timestamp."
       (chai-test--kill-file-buffers-under dir)
       (delete-directory dir t))))
 
+(ert-deftest chai-test-library-refresh-preserves-current-book ()
+  "Refreshing the library keeps point on the selected book."
+  (let* ((book-a (chai-book-create :id "20260101T000001" :author "" :title "Alpha"
+                                   :keywords nil :status nil :rating nil
+                                   :file-path "/tmp/alpha.org" :modified (seconds-to-time 1)))
+         (book-b (chai-book-create :id "20260101T000002" :author "" :title "Beta"
+                                   :keywords nil :status nil :rating nil
+                                   :file-path "/tmp/beta.org" :modified (seconds-to-time 2)))
+         (book-c (chai-book-create :id "20260101T000003" :author "" :title "Gamma"
+                                   :keywords nil :status nil :rating nil
+                                   :file-path "/tmp/gamma.org" :modified (seconds-to-time 3)))
+         (books (list book-a book-b book-c)))
+    (cl-letf (((symbol-function 'chai-library-scan) (lambda (&optional _) books)))
+      (with-temp-buffer
+        (chai-library-mode)
+        (chai-library-refresh)
+        (goto-char (point-min))
+        (search-forward "Beta")
+        (let ((column (current-column)))
+          (setq books (list book-c book-b book-a))
+          (chai-library-refresh)
+          (should (equal (chai-book-id (chai-library-get-book-at-point))
+                         "20260101T000002"))
+          (should (= (current-column) column)))))))
+
 (ert-deftest chai-test-collect-comments ()
   "Collect CHAI_COMMENT blocks."
   (chai-test--with-temp-org "#+BEGIN_CHAI_COMMENT\nFirst comment.\n#+END_CHAI_COMMENT\n\n#+BEGIN_CHAI_COMMENT\nSecond.\n#+END_CHAI_COMMENT"

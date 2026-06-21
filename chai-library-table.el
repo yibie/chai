@@ -188,17 +188,44 @@ Uses simple propertized strings for display."
 
 ;;; Commands
 
+(defun chai-library--same-book-p (book id path)
+  "Return non-nil when BOOK matches ID or PATH."
+  (and book
+       (or (and id (equal (chai-book-id book) id))
+           (and path (equal (expand-file-name (chai-book-file-path book))
+                            (expand-file-name path))))))
+
+(defun chai-library--goto-book-or-line (id path line column)
+  "Move point to book matching ID/PATH, falling back to LINE and COLUMN."
+  (let (found)
+    (goto-char (point-min))
+    (while (and (not found) (not (eobp)))
+      (let ((book (tabulated-list-get-id)))
+        (if (chai-library--same-book-p book id path)
+            (setq found t)
+          (forward-line 1))))
+    (unless found
+      (goto-char (point-min))
+      (forward-line (max 0 (1- line))))
+    (move-to-column column)))
+
 (defun chai-library-refresh ()
   "Refresh the library display.
 Use `chai-library-auto-rename-all' to batch-rename unmanaged files."
   (interactive)
-  (let* ((all-books (chai-library-scan))
+  (let* ((current-book (chai-library-get-book-at-point))
+         (current-id (and current-book (chai-book-id current-book)))
+         (current-path (and current-book (chai-book-file-path current-book)))
+         (current-line (line-number-at-pos))
+         (current-column (current-column))
+         (all-books (chai-library-scan))
          (books (if chai-library--filter
                     (chai-library--filter-books all-books chai-library--filter)
                   all-books)))
     (setq tabulated-list-entries
           (mapcar #'chai-library--book-to-entry books))
-    (tabulated-list-print t)))
+    (tabulated-list-print t)
+    (chai-library--goto-book-or-line current-id current-path current-line current-column)))
 
 
 ;;;###autoload
