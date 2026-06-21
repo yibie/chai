@@ -251,6 +251,7 @@ BACKEND is the export backend."
                       new-type
                       (if note (concat ":" note) "")
                       text))
+      (chai--after-org-structure-change)
       (chai-refresh-annotations))))
 
 (defun chai-mouse-edit-annotation (&optional pos)
@@ -275,6 +276,7 @@ BACKEND is the export backend."
       (if (string-empty-p new-note)
           (insert (format "[[chai:%s][%s]]" type text))
         (insert (format "[[chai:%s:%s][%s]]" type new-note text)))
+      (chai--after-org-structure-change)
       (chai-refresh-annotations))))
 
 (defun chai-mouse-remove-highlight (&optional pos)
@@ -375,6 +377,12 @@ after the menu was opened."
 
 ;;; Highlight Commands
 
+(defun chai--after-org-structure-change ()
+  "Reset Org element cache after Chai changes Org syntax."
+  (when (and (derived-mode-p 'org-mode)
+             (fboundp 'org-element-cache-reset))
+    (org-element-cache-reset)))
+
 ;;;###autoload
 (defun chai-highlight-region (start end type)
   "Highlight the region from START to END with TYPE, no annotation.
@@ -388,7 +396,8 @@ Format: [[chai:TYPE][TEXT]]"
   (let* ((text (buffer-substring-no-properties start end))
          (link-path (format "chai:%s" type)))
     (delete-region start end)
-    (insert (format "[[%s][%s]]" link-path text))))
+    (insert (format "[[%s][%s]]" link-path text))
+    (chai--after-org-structure-change)))
 
 ;;;###autoload
 (defun chai-highlight-annotate (start end type note)
@@ -406,6 +415,7 @@ Format: [[chai:TYPE:NOTE][TEXT]]"
          (link-path (format "chai:%s:%s" type note)))
     (delete-region start end)
     (insert (format "[[%s][%s]]" link-path text))
+    (chai--after-org-structure-change)
     (chai--render-note-overlays (- (point) (length text) (length link-path) 6)
                                 (point))))
 
@@ -430,6 +440,7 @@ Works whether the link has a note or not."
         (chai-clear-annotations begin end)
         (delete-region begin end)
         (insert text)
+        (chai--after-org-structure-change)
         (goto-char begin)))))
 
 ;;; Annotation Rendering
@@ -549,6 +560,7 @@ Otherwise insert an empty block at point."
     (insert (if (string-empty-p body)
                 "#+BEGIN_CHAI_COMMENT\n#+END_CHAI_COMMENT\n"
               (format "#+BEGIN_CHAI_COMMENT\n%s\n#+END_CHAI_COMMENT\n" body)))
+    (chai--after-org-structure-change)
     (forward-line -1)
     (when (string-empty-p body)
       (end-of-line))))
@@ -559,7 +571,8 @@ Otherwise insert an empty block at point."
   (interactive "sComment: ")
   (when (string-empty-p (string-trim text))
     (user-error "Comment cannot be empty"))
-  (insert (format "#+BEGIN_CHAI_COMMENT\n%s\n#+END_CHAI_COMMENT\n" text)))
+  (insert (format "#+BEGIN_CHAI_COMMENT\n%s\n#+END_CHAI_COMMENT\n" text))
+  (chai--after-org-structure-change))
 
 (defun chai--current-highlight-type ()
   "Return the chai highlight type at point, or nil."

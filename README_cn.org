@@ -1,4 +1,4 @@
-#+TITLE: Chai (拆) - 阅读高亮与导出
+#+TITLE: Chai (拆) - 阅读、高亮与导出
 #+AUTHOR: Yibie
 #+EMAIL: yibie@outlook.com
 #+DATE: 2025-01
@@ -7,13 +7,30 @@
 
 "拆"——将复杂的知识拆解、消化、重组为自己的理解。
 
-Chai 是一个轻量级的 Emacs 阅读工作流，包含两大模块：
+Chai 是一个轻量级的 Emacs 阅读工作流。它不会把原文搬进另一个笔记系统加工，而是让你在
+普通的 Org 文件里直接阅读，并在原地留下轻量标记；Chai 再为这些标记提供颜色显示、鼠标
+操作、注释 overlay、上下文导航和结构化导出。
 
-1. *Library (知识库)* —— 管理阅读材料，支持从 PDF/Markdown/EPUB/HTML 导入
-2. *Highlights (高亮)* —— 在阅读过程中标记并导出重要片段
+早期 Chai 包含一个更重的 Refinery 流程：把原文内容分叉到独立工作台，在那里改写、压缩、
+再保存为笔记。现在的设计更轻：
+
+- 源文件仍然是普通的 =.org= 文件。
+- 高亮是标准 Org link：=[[chai:TYPE][TEXT]]=。
+- 批注是标准 Org special block：=#+BEGIN_CHAI_COMMENT ... #+END_CHAI_COMMENT=。
+- 导出结果是普通 Org headline 加 properties drawer。
+- 保存、复制、编辑都走 Org/Emacs 原生机制。
+
+即使不加载 Chai，这些文件依然是可读、可编辑的普通 Org 文档；加载 Chai 后，同一套语法会
+获得语义化 face、鼠标命令、注释 overlay、上下文面板和一键导出。
+
+整个工作流分为三个部分：
+
+1. *Library（知识库）* —— 以 Org 文件管理阅读材料
+2. *高亮与评论* —— 在阅读过程中标记重要片段并写下想法
+3. *导出与预览* —— 将标记导出或预览为 Org 笔记
 
 #+begin_quote
-📖 阅读 → 🔖 高亮 → ✍️ 写入自己的笔记
+📖 在 Library 中阅读 → 🔖 高亮 / 评论 → ✍️ 导出 / 预览到自己的笔记
 #+end_quote
 
 ** 演示
@@ -25,8 +42,9 @@ Chai 是一个轻量级的 Emacs 阅读工作流，包含两大模块：
 ** 依赖
 
 - Emacs 29.1+
-- [[https://pandoc.org/][Pandoc]] (文件转换)
-- Python 3.x + PyMuPDF (PDF 处理)
+- [[https://pandoc.org/][Pandoc]]（文件转换，导入时使用）
+- Python 3.x + PyMuPDF（PDF 处理，导入时使用）
+- [[https://magit.vc/manual/transient/][transient]]（仅用于 Library 快捷命令菜单）
 
 *** macOS OCR 支持（可选）
 
@@ -43,8 +61,8 @@ pip install pyobjc-framework-Vision Pillow
 (add-to-list 'load-path "~/path/to/chai/")
 
 ;; 加载核心模块
-(require 'chai)               ;; 高亮与导出
-(require 'chai-library)       ;; 知识库
+(require 'chai)               ;; 高亮、评论与导出
+(require 'chai-library)       ;; 知识库管理
 (require 'chai-library-table) ;; 知识库表格界面
 
 ;; 可选：全局快捷键
@@ -57,9 +75,10 @@ Chai 默认使用以下目录结构（均在 =~/.emacs.d/chai/= 下）：
 
 #+begin_example
 ~/.emacs.d/chai/
-├── library/          ;; 知识库文件
+├── library/          ;; 知识库文件（已接管的 .org 文件）
 ├── inbox/            ;; 待导入文件
-└── archive/          ;; 导入后原文件归档
+├── archive/          ;; 导入后原文件归档
+└── exports/          ;; 可编辑的导出预览文件
 #+end_example
 
 可通过以下变量自定义：
@@ -69,17 +88,22 @@ Chai 默认使用以下目录结构（均在 =~/.emacs.d/chai/= 下）：
 | =chai-library-directory= | 知识库目录 | =~/.emacs.d/chai/library/= |
 | =chai-library-import-inbox= | 导入收件箱 | =~/.emacs.d/chai/inbox/= |
 | =chai-library-import-archive= | 归档目录 | =~/.emacs.d/chai/archive/= |
+| =chai-export-preview-directory= | 导出预览目录 | =~/.emacs.d/chai/exports/= |
 
-* Library (知识库)
+* Library（知识库）
+
+Chai 的 Library 是一个 Org 文件目录。只要将 =.org= 文件放入
+=chai-library-directory=，打开或刷新 Library 时就会自动接管。你*不需要*先运行导入命令。
 
 ** 导入文件
 
-*** 方式 1：Emacs 命令（推荐）
+如果你从 PDF/Markdown/EPUB/HTML 开始，可以用以下方式将其转换为 Org 并放入知识库：
 
 - =M-x chai-library-import= —— 批量导入 inbox 目录中的所有文件
 - =C-u M-x chai-library-import= —— 导入单个指定文件
+- =M-x chai-library-auto-rename-all= —— 重命名/接管知识库目录中所有未规范命名的 =.org= 文件
 
-*** 方式 2：命令行
+通过命令行：
 
 #+begin_src bash
 # 批量导入
@@ -114,8 +138,7 @@ ID__Author__Title==keyword1_keyword2--status-rating.org
 - ==== —— 关键词分隔
 - =--= —— 状态和评分
 
-Chai 扫描知识库目录时会自动接管未规范命名的 =.org= 文件。没有 =#+TITLE:= 或
-=#+AUTHOR:= 的文件，会使用当前文件名作为标题。也可以从终端运行批量重命名脚本：
+也可以从终端运行批量重命名脚本：
 
 #+begin_src bash
 emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
@@ -130,6 +153,7 @@ emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
 
 | 按键 | 功能 |
 |------+------|
+| =?= | 打开 transient 快捷命令菜单 |
 | =RET= | 打开选中的书籍/文档 |
 | =s= | 设置阅读状态（unread/reading/done/archived） |
 | =r= / =0-5= | 设置评分（0-5 星） |
@@ -140,6 +164,13 @@ emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
 | =c= | 清除过滤 |
 | =S= | 切换排序方式 |
 | =g= | 刷新列表 |
+
+=?= 打开的是 *transient* 快捷命令菜单——它是一个快捷命令面板，不是常驻操作面板。
+选择一个命令执行后就会回到表格。
+
+按 =g= 刷新时会尽量保持当前书籍/选中位置。
+
+=chai-library-mode= 下会自动禁用 Evil，避免上述按键被 Evil 覆盖。
 
 可以通过 =chai-library-keybindings= 自定义 Library 按键。若在加载 Chai 后修改，
 再运行 =M-x chai-library-apply-keybindings= 使其生效。
@@ -152,7 +183,15 @@ emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
 (chai-library-apply-keybindings)
 #+end_src
 
-* Highlights (高亮)
+* 高亮与评论
+
+** 存储语法
+
+在阅读 Org 文件时，使用 Chai 链接和自由评论块来标记片段：
+
+- 高亮文本：=[[chai:TYPE][TEXT]]=
+- 带注释的高亮：=[[chai:TYPE:NOTE][TEXT]]=
+- 自由评论块：=#+BEGIN_CHAI_COMMENT= ... =#+END_CHAI_COMMENT=
 
 ** 命令
 
@@ -172,24 +211,20 @@ emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
 
 ** 高亮系统
 
-在阅读时标记重要内容，共 12 种语义化类型。Chai 链接会使用配置好的 face
-直接渲染；悬停时 echo area 会显示类型或注释。只要 org 文件中包含 chai 链接，
-注释 overlay 会在文件打开时自动渲染。
+Chai 提供 12 种语义化高亮类型。每种类型都对应一个 face，因此高亮会直接显示在
+buffer 中。face 同时适配浅色/深色主题，你也可以自定义或新增类型。
 
 在 chai 链接上右键，可以修改类型、编辑注释、移除高亮、复制高亮文本。选中区域后
 右键，可以快速将其高亮为 =important=、=idea=、=question=、=key= 或其他类型。
 
 [[file:pics/chai-annotation.png]]
 
-*** 原有类型
+*** 内置类型
 
 - 🔴 *important* —— 重要观点
 - 🟢 *idea* —— 灵感/想法
 - 🟠 *question* —— 疑问
 - 🟡 *critical* —— 关键内容
-
-*** 扩展类型
-
 - 💛 *key* —— 中心思想/主旨句（黄色高亮）
 - 🔴 *core* —— 定义/核心考点（红/橙色高亮）
 - 🟢 *detail* —— 数据/关键细节（绿色下划线）
@@ -228,16 +263,13 @@ emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
 - =M-x chai-insert-comment= 插入空块；若有选中区域，则将其包裹成评论块。
 - 评论块会按原文顺序与高亮一起导出。
 
-** 导出格式
+* 导出格式
 
 Chai 区分*输入/存储语法*（阅读时直接写的标记）和*导出语法*（复制到 kill-ring 或在预览 buffer 中展示的内容）。
 
-存储语法：
-- 高亮文本：=[[chai:TYPE][TEXT]]=
-- 带注释的高亮：=[[chai:TYPE:NOTE][TEXT]]=
-- 自由评论块：=#+BEGIN_CHAI_COMMENT= ... =#+END_CHAI_COMMENT=
+=M-x chai-export-highlights-copy-org= 将高亮与评论以按原文顺序排列的 Org headline 形式复制到 kill-ring。每种高亮类型会转换为大写的 TODO 状态，源文件元数据放在 =:PROPERTIES:= 抽屉里。=#+SEQ_TODO:= 行根据你的 =chai-highlight-types= 动态生成，并在末尾追加 =COMMENT= 以容纳自由批注。
 
-=M-x chai-export-highlights-copy-org= 将高亮以按原文顺序排列的 Org headline 形式复制到 kill-ring。每种高亮类型会转换为大写的 TODO 状态，源文件元数据放在 =:PROPERTIES:= 抽屉里。=#+SEQ_TODO:= 行根据你的 =chai-highlight-types= 动态生成，并在末尾追加 =COMMENT= 以容纳自由批注。
+文件头优先使用源 Org buffer 的 =#+TITLE=，其次回退到源文件 base 名，没有源文件时显示 "Chai Export"。
 
 =M-x chai-export-preview= 则把同样的导出结果放进可编辑的 =*Chai Export Preview*= buffer。该 buffer 会关联到 =~/.emacs.d/chai/exports/<源文件名>_chai.org=（可通过 =chai-export-preview-directory= 自定义），你可以直接编辑并按 =C-x C-s= 正常保存。预览命令本身不会写入文件。
 
@@ -276,20 +308,49 @@ annotation 文本
 :END:
 #+end_example
 
+=L25= 链接跳转到源文件中的对应行号。
+
+* 命令速查
+
+** Library 命令
+
+| 命令 | 功能 |
+|------+------|
+| =M-x chai-library-open= | 打开 Library 表格 |
+| =M-x chai-library-import= | 从 inbox 批量导入（加前缀导入单个文件） |
+| =M-x chai-library-auto-rename-all= | 重命名/接管知识库目录中所有未规范命名的 =.org= 文件 |
+| =M-x chai-library-refresh= | 刷新 Library 表格 |
+| =M-x chai-library-set-status= | 设置当前书籍阅读状态 |
+| =M-x chai-library-set-rating= / =0-5= | 设置当前书籍评分 |
+| =M-x chai-library-set-keywords= | 设置当前书籍关键词 |
+| =M-x chai-library-delete= | 删除当前书籍 |
+| =M-x chai-library-apply-keybindings= | 重新应用自定义的 =chai-library-keybindings= |
+
+** 阅读 / 高亮命令
+
+| 命令 | 功能 |
+|------+------|
+| =M-x chai-highlight-region= | 高亮选中区域 |
+| =M-x chai-highlight-annotate= | 高亮并添加注释 |
+| =M-x chai-remove-highlight= | 移除光标处高亮 |
+| =M-x chai-add-comment= | 提示输入并插入自由评论 |
+| =M-x chai-insert-comment= | 插入 =#+BEGIN_CHAI_COMMENT= 块 |
+| =M-x chai-export-highlights-copy= | 以纯文本复制标记 |
+| =M-x chai-export-highlights-copy-org= | 以 Org 格式复制标记 |
+| =M-x chai-export-preview= | 打开可编辑的 Org 预览 buffer |
+| =M-x chai-export-preview-save= | 直接保存 Org 导出到预览文件 |
+| =M-x chai-context-panel-toggle= | 切换高亮概览面板 |
+| =M-x chai-refresh-annotations= | 刷新注释 overlay |
+
 * 快速入门
 
-1. *准备材料* —— 将 PDF/EPUB/Markdown 文件放入 inbox 目录
-2. *导入* —— 运行 =M-x chai-library-import=
-3. *打开 Library* —— =M-x chai-library-open=，按 =RET= 打开文档
-4. *高亮* —— 选中文字，运行 =M-x chai-highlight-region= 或 =M-x chai-highlight-annotate=
-5. *导出* —— 运行 =M-x chai-export-highlights-copy-org=，粘贴到自己的笔记
-
-* 链接系统
-
-Chai 使用 =chai:= 链接协议实现知识关联：
-
-- 高亮文本使用 =[[chai:TYPE][text]]= 或 =[[chai:TYPE:NOTE][text]]= 格式
-- 如果高亮来自 Library 中的书籍，点击可跳转到原文
+1. *放入材料* —— 将 =.org= 文件直接放入 =chai-library-directory=，或用
+   =M-x chai-library-import= 导入 PDF/Markdown/EPUB/HTML。
+2. *打开 Library* —— =M-x chai-library-open=，按 =RET= 打开文档。
+3. *高亮* —— 选中文字，运行 =M-x chai-highlight-region= 或
+   =M-x chai-highlight-annotate=。
+4. *导出* —— 运行 =M-x chai-export-highlights-copy-org= 粘贴到自己的笔记，
+   或 =M-x chai-export-preview= 直接编辑并保存导出。
 
 * 与其他工具集成
 
@@ -342,7 +403,6 @@ Yibie <yibie@outlook.com>
 
 - 初始版本发布
 - Library 知识库管理
-- Refinery 拆解工坊
 - 高亮与链接系统（12 种语义化类型）
 - 上下文面板（按类型分组显示高亮）
 - macOS OCR 支持

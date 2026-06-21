@@ -1,4 +1,4 @@
-#+TITLE: Chai (拆) - Highlight and Export for Reading
+#+TITLE: Chai (拆) - Reading, Highlights, and Export
 #+AUTHOR: Yibie
 #+EMAIL: yibie@outlook.com
 #+DATE: 2025-01
@@ -9,13 +9,33 @@
 
 "拆" (chāi) — to dismantle, break down, and digest complex knowledge into your own understanding.
 
-Chai is an Emacs reading workflow with two lightweight parts:
+Chai is a lightweight Emacs reading workflow. It does not move text into a
+separate note-taking system; instead, you read directly in ordinary Org files and
+leave lightweight marks where they belong. Chai then gives those marks color,
+mouse actions, annotation overlays, context navigation, and structured export.
 
-1. *Library* — Manage reading materials, import from PDF/Markdown/EPUB/HTML
-2. *Highlights* — Mark and export important fragments from your reading
+Early versions of Chai included a heavier Refinery workflow: content was forked
+into a separate workbench, rewritten there, and then saved as notes. The current
+design is much lighter:
+
+- Source files stay plain =.org= files.
+- Highlights are standard Org links: =[[chai:TYPE][TEXT]]=.
+- Comments are standard Org special blocks: =#+BEGIN_CHAI_COMMENT ... #+END_CHAI_COMMENT=.
+- Export results are ordinary Org headlines with property drawers.
+- Save, copy, and edit all work through native Org/Emacs mechanisms.
+
+Without Chai, the files remain readable and editable as normal Org documents.
+With Chai enabled, the same syntax gains semantic faces, mouse commands, note
+overlays, a context panel, and one-key export.
+
+The workflow has three parts:
+
+1. *Library* — Manage reading materials as Org files
+2. *Highlights & Comments* — Mark important fragments while reading
+3. *Export & Preview* — Copy or preview an Org export of your marks
 
 #+begin_quote
-📖 Read → 🔖 Highlight → ✍️ Write your own notes
+📖 Read in Library → 🔖 Highlight / Comment → ✍️ Export / Preview into your notes
 #+end_quote
 
 ** Demo
@@ -27,8 +47,9 @@ Chai is an Emacs reading workflow with two lightweight parts:
 ** Dependencies
 
 - Emacs 29.1+
-- [[https://pandoc.org/][Pandoc]] (file conversion)
-- Python 3.x + PyMuPDF (PDF processing)
+- [[https://pandoc.org/][Pandoc]] (file conversion, used by import)
+- Python 3.x + PyMuPDF (PDF processing, used by import)
+- [[https://magit.vc/manual/transient/][transient]] (Library quick-command menu only)
 
 *** macOS OCR Support (Optional)
 
@@ -45,23 +66,24 @@ pip install pyobjc-framework-Vision Pillow
 (add-to-list 'load-path "~/path/to/chai/")
 
 ;; Load core modules
-(require 'chai)               ;; Highlights and export
-(require 'chai-library)       ;; Library
+(require 'chai)               ;; Highlights, comments, and export
+(require 'chai-library)       ;; Library management
 (require 'chai-library-table) ;; Library table interface
 
 ;; Optional: Global keybindings
 (global-set-key (kbd "C-c l") #'chai-library-open)
 #+end_src
 
-** Directory Structure
+** Directories
 
 Chai uses the following default directory structure (under =~/.emacs.d/chai/=):
 
 #+begin_example
 ~/.emacs.d/chai/
-├── library/          ;; Library files
+├── library/          ;; Library files (managed .org files)
 ├── inbox/            ;; Import inbox
-└── archive/          ;; Archived source files after import
+├── archive/          ;; Archived source files after import
+└── exports/          ;; Editable export preview files
 #+end_example
 
 Customize via these variables:
@@ -71,17 +93,24 @@ Customize via these variables:
 | =chai-library-directory= | Library directory | =~/.emacs.d/chai/library/= |
 | =chai-library-import-inbox= | Import inbox | =~/.emacs.d/chai/inbox/= |
 | =chai-library-import-archive= | Archive directory | =~/.emacs.d/chai/archive/= |
+| =chai-export-preview-directory= | Export preview directory | =~/.emacs.d/chai/exports/= |
 
 * Library
 
+Chai's Library is a directory of Org files. Once an =.org= file is placed in
+=chai-library-directory=, it is automatically adopted when the library is opened
+or refreshed. You do *not* have to run an import command first.
+
 ** Importing Files
 
-*** Method 1: Emacs Commands (Recommended)
+If you start with PDF/Markdown/EPUB/HTML, use one of the import paths to convert
+them into Org and move them into the library:
 
-- =M-x chai-library-import= — Batch import all files in inbox
+- =M-x chai-library-import= — Batch import all files from the inbox
 - =C-u M-x chai-library-import= — Import a single specified file
+- =M-x chai-library-auto-rename-all= — Rename/adopt all unmanaged =.org= files already in the library directory
 
-*** Method 2: Command Line
+From the terminal:
 
 #+begin_src bash
 # Batch import
@@ -116,10 +145,7 @@ Delimiter meanings:
 - ==== — Keyword separator
 - =--= — Status and rating
 
-Chai automatically adopts unmanaged =.org= files in the library directory when
-the library is scanned. Files without =#+TITLE:= or =#+AUTHOR:= use their
-current filename as the title. You can still run the batch rename script to
-normalize files from the terminal:
+You can also run the batch rename script from the terminal:
 
 #+begin_src bash
 emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
@@ -128,12 +154,13 @@ emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
 
 ** Using the Library
 
-Run =M-x chai-library-open= to open the library interface (opens full-frame):
+Run =M-x chai-library-open= to open the library interface (full-frame):
 
 [[file:pics/chai-library.png]]
 
 | Key | Function |
 |-----+----------|
+| =?= | Open the transient quick-command menu |
 | =RET= | Open selected book/document |
 | =s= | Set reading status (unread/reading/done/archived) |
 | =r= / =0-5= | Set rating (0-5 stars) |
@@ -144,6 +171,14 @@ Run =M-x chai-library-open= to open the library interface (opens full-frame):
 | =c= | Clear filter |
 | =S= | Toggle sort order |
 | =g= | Refresh list |
+
+The =?= key opens a *transient* quick-command menu — it is a shortcut palette, not a
+persistent operating panel. Use it to run a single command and return to the table.
+
+Refresh (=g=) preserves the current book/selection position when possible.
+
+Evil is automatically disabled in =chai-library-mode= so that the plain keymap above
+is not shadowed by Evil bindings.
 
 Customize Library keys with =chai-library-keybindings=. If you change it after
 loading Chai, run =M-x chai-library-apply-keybindings=.
@@ -156,7 +191,16 @@ loading Chai, run =M-x chai-library-apply-keybindings=.
 (chai-library-apply-keybindings)
 #+end_src
 
-* Highlights
+* Highlights and Comments
+
+** Storage Syntax
+
+While reading an Org file, mark fragments with Chai links and free-standing
+comment blocks:
+
+- Highlighted text: =[[chai:TYPE][TEXT]]=
+- Highlighted text with annotation: =[[chai:TYPE:NOTE][TEXT]]=
+- Free-standing comment: =#+BEGIN_CHAI_COMMENT= ... =#+END_CHAI_COMMENT=
 
 ** Commands
 
@@ -176,10 +220,9 @@ loading Chai, run =M-x chai-library-apply-keybindings=.
 
 ** Highlighting System
 
-Mark important content while reading with 12 semantic types. Chai links are
-visibly rendered using the configured faces; hover to see the type or note in
-the echo area. Annotations are rendered automatically in any Org buffer
-containing chai links.
+Chai provides 12 semantic highlight types. Each type is rendered with a face, so
+highlights are visible directly in the buffer. Faces work in both light and dark
+themes, and you can customize them or add your own types.
 
 Right-click a chai link to change type, edit the note, remove the highlight, or
 copy the highlighted text. With an active region, right-click to highlight it as
@@ -187,15 +230,12 @@ copy the highlighted text. With an active region, right-click to highlight it as
 
 [[file:pics/chai-annotation.png]]
 
-*** Original Types
+*** Built-in Types
 
 - 🔴 *important* — Important viewpoint
 - 🟢 *idea* — Inspiration/thought
 - 🟠 *question* — Question
 - 🟡 *critical* — Critical content
-
-*** Extended Types
-
 - 💛 *key* — Central idea/main point (yellow)
 - 🔴 *core* — Definition/core concept (red/orange)
 - 🟢 *detail* — Data/key details (green, underline)
@@ -237,25 +277,24 @@ This is my own thought about the section above.
 - =M-x chai-insert-comment= inserts an empty block, or wraps the active region.
 - Comments are collected and exported together with highlights in source order.
 
-** Export Format
+* Export Format
 
 Chai distinguishes between *storage syntax* (what you type while reading) and
 *export syntax* (what is copied to the kill ring or shown in the preview
 buffer).
 
-Storage syntax:
-- Highlighted text: =[[chai:TYPE][TEXT]]=
-- Highlighted text with annotation: =[[chai:TYPE:NOTE][TEXT]]=
-- Free-standing comment: =#+BEGIN_CHAI_COMMENT= ... =#+END_CHAI_COMMENT=
+=M-x chai-export-highlights-copy-org= copies highlights and comments as
+source-ordered Org headlines. Each highlight type becomes a TODO keyword, and
+source metadata lives in a =:PROPERTIES:= drawer. The =#+SEQ_TODO:= line is
+generated dynamically from your =chai-highlight-types=, with =COMMENT= appended
+for free-standing comments.
 
-=M-x chai-export-highlights-copy-org= copies highlights as source-ordered Org
-headlines. Each highlight type becomes a TODO state, and source metadata lives
-in a =:PROPERTIES:= drawer. The =#+SEQ_TODO:= line is generated dynamically from
-your =chai-highlight-types=, with =COMMENT= appended for free-standing comments.
+The file header prefers the source Org buffer's =#+TITLE=, falls back to the
+source file's base name, and finally to "Chai Export" when no source is known.
 
 =M-x chai-export-preview= opens the same export in an editable =*Chai Export
 Preview*= buffer. The buffer is associated with
-=~/.emacs.d/chai/exports/<source-file-base>_chai.org= (customize via
+=~/.emacs.d/chai/exports/<source-base>_chai.org= (customize via
 =chai-export-preview-directory=) so you can edit it and press =C-x C-s= to save
 normally. No file is written until you save.
 
@@ -267,7 +306,7 @@ normally. No file is written until you save.
 #+EXPORTED_AT: 2026-06-21 12:30
 #+SEQ_TODO: IMPORTANT IDEA QUESTION KEY COMMENT
 
-* IMPORTANT 原文高亮文本
+* IMPORTANT highlighted text
 :PROPERTIES:
 :SOURCE: [[file:/path/to/source.org::25][L25]]
 :END:
@@ -277,38 +316,68 @@ Annotated highlights keep the note in a =#+BEGIN_CHAI_ANNOTATION= block under
 the headline:
 
 #+begin_example
-* IDEA 原文高亮文本
+* IDEA highlighted text
 :PROPERTIES:
 :SOURCE: [[file:/path/to/source.org::25][L25]]
 :END:
 #+BEGIN_CHAI_ANNOTATION
-annotation 文本
+annotation text
 #+END_CHAI_ANNOTATION
 #+end_example
 
 Free-standing comments export as =COMMENT= headlines:
 
 #+begin_example
-* COMMENT 自由批注文本
+* COMMENT free-standing comment text
 :PROPERTIES:
 :SOURCE: [[file:/path/to/source.org::120][L120]]
 :END:
 #+end_example
 
+The =L25= link jumps to the source line in the original file.
+
+* Commands Reference
+
+** Library Commands
+
+| Command | Function |
+|---------+----------|
+| =M-x chai-library-open= | Open the Library table |
+| =M-x chai-library-import= | Import files from inbox (or a single file with prefix) |
+| =M-x chai-library-auto-rename-all= | Rename/adopt all unmanaged =.org= files in the library directory |
+| =M-x chai-library-refresh= | Refresh the Library table |
+| =M-x chai-library-set-status= | Set reading status for book at point |
+| =M-x chai-library-set-rating= / =0-5= | Set rating for book at point |
+| =M-x chai-library-set-keywords= | Set keywords for book at point |
+| =M-x chai-library-delete= | Delete book at point |
+| =M-x chai-library-apply-keybindings= | Re-apply custom =chai-library-keybindings= |
+
+** Reading / Highlight Commands
+
+| Command | Function |
+|---------+----------|
+| =M-x chai-highlight-region= | Highlight selected region |
+| =M-x chai-highlight-annotate= | Highlight selected region with note |
+| =M-x chai-remove-highlight= | Remove highlight at point |
+| =M-x chai-add-comment= | Prompt for and insert a free-standing comment |
+| =M-x chai-insert-comment= | Insert a =#+BEGIN_CHAI_COMMENT= block |
+| =M-x chai-export-highlights-copy= | Copy marks as plain text |
+| =M-x chai-export-highlights-copy-org= | Copy marks as Org markup |
+| =M-x chai-export-preview= | Open editable Org preview buffer |
+| =M-x chai-export-preview-save= | Save Org export directly to preview file |
+| =M-x chai-context-panel-toggle= | Toggle highlight overview panel |
+| =M-x chai-refresh-annotations= | Refresh annotation overlays |
+
 * Quick Start
 
-1. *Prepare materials* — Put PDF/EPUB/Markdown files in inbox directory
-2. *Import* — Run =M-x chai-library-import=
-3. *Open Library* — =M-x chai-library-open=, press =RET= to open document
-4. *Highlight* — Select text and =M-x chai-highlight-region= or =M-x chai-highlight-annotate=
-5. *Export* — =M-x chai-export-highlights-copy-org= and paste into your notes
-
-* Link System
-
-Chai uses the =chai:= link protocol for knowledge association:
-
-- Highlighted text uses =[[chai:TYPE][text]]= or =[[chai:TYPE:NOTE][text]]= format
-- Click a highlight with a book ID to jump to the original source (if from Library books)
+1. *Put materials in the library* — Drop =.org= files into
+   =chai-library-directory=, or import PDF/Markdown/EPUB/HTML with
+   =M-x chai-library-import=.
+2. *Open Library* — =M-x chai-library-open=, press =RET= to open a document.
+3. *Highlight* — Select text and =M-x chai-highlight-region= or
+   =M-x chai-highlight-annotate=.
+4. *Export* — =M-x chai-export-highlights-copy-org= and paste into your notes,
+   or =M-x chai-export-preview= to edit and save the export directly.
 
 * Integration with Other Tools
 
@@ -352,7 +421,7 @@ Yibie <yibie@outlook.com>
 ** v1.1.0 (2026-02)
 
 - *Library*: Add =k= keybinding to set keywords for a book; keywords are
-  encoded in the filename (===kw1_kw2= section) and searchable via =/=
+  encoded in the filename (===kw1_kw2= section) and searchable via =/
 - *Library*: Fix keywords column not refreshing after changes
 - *Library*: Open in full-frame window (=delete-other-windows=)
 - *Annotations*: Automatically render note overlays in any Org buffer
@@ -362,7 +431,6 @@ Yibie <yibie@outlook.com>
 
 - Initial release
 - Library knowledge base management
-- Refinery workbench
 - Highlighting and linking system
 - Context Panel for structured annotation review
 - macOS OCR support

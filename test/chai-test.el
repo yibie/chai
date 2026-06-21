@@ -52,6 +52,15 @@ Binds a small `chai-highlight-types' and freezes the exported timestamp."
       (should (= (nth 3 hl) 1))
       (should (= (nth 4 hl) 1)))))
 
+(ert-deftest chai-test-highlight-region-resets-org-element-cache ()
+  "Highlighting resets Org's element cache after changing link syntax."
+  (chai-test--with-temp-org "highlight me"
+    (let ((calls 0))
+      (cl-letf (((symbol-function 'org-element-cache-reset)
+                 (lambda (&rest _) (cl-incf calls))))
+        (chai-highlight-region 1 13 "important")
+        (should (= calls 1))))))
+
 (ert-deftest chai-test-collect-annotated-highlight ()
   "Collect a highlight with a note."
   (chai-test--with-temp-org "[[chai:idea:my note][highlight text]]"
@@ -333,6 +342,12 @@ Binds a small `chai-highlight-types' and freezes the exported timestamp."
           (should-not (lookup-key chai-library-mode-map (kbd "a"))))
       (setq chai-library-keybindings old-bindings)
       (chai-library-apply-keybindings))))
+
+(ert-deftest chai-test-library-menu-default-keybinding ()
+  "Library exposes the transient menu on the default ? key."
+  (should (eq (lookup-key chai-library-mode-map (kbd "?"))
+              'chai-library-menu))
+  (should (fboundp 'chai-library-menu)))
 
 (ert-deftest chai-test-library-rename-unmanaged-without-metadata ()
   "Unmanaged org files without metadata are adopted using the filename as title."
