@@ -12,6 +12,16 @@
 # Byte-compiled files
 *.elc
 
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local tool/session state
+.codex/
+.reasonix/
+.serena/
+reasonix.toml
+
 # Test artifacts
 test-*.el
 *-test-*.el
