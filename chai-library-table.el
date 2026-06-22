@@ -12,6 +12,7 @@
 (require 'tabulated-list)
 (require 'cl-lib)
 (require 'seq)
+(require 'transient)
 
 (defgroup chai-library-table nil
   "Table component for Chai Library."
@@ -115,6 +116,7 @@
 (defcustom chai-library-keybindings
   '(("RET" . chai-library-open-book-at-point)
     ("/"   . chai-library-set-filter)
+    ("?"   . chai-library-menu)
     ("c"   . chai-library-clear-filter)
     ("g"   . chai-library-refresh)
     ("a"   . chai-library-add)
@@ -144,6 +146,31 @@ Set this before loading `chai-library-table', or call
   (dolist (binding chai-library-keybindings)
     (define-key chai-library-mode-map (kbd (car binding)) (cdr binding))
     (push (car binding) chai-library--installed-keybindings)))
+
+(transient-define-prefix chai-library-menu ()
+  "Chai Library command menu."
+  [["Navigate"
+    ("RET" "open" chai-library-open-book-at-point)
+    ("g" "refresh" chai-library-refresh)
+    ("S" "sort" chai-library-cycle-sort)]
+   ["Filter"
+    ("/" "set" chai-library-set-filter)
+    ("c" "clear" chai-library-clear-filter)]
+   ["Metadata"
+    ("s" "status" chai-library-set-status)
+    ("r" "rating" chai-library-set-rating)
+    ("k" "keywords" chai-library-set-keywords)
+    ("a" "rename" chai-library-add)]
+   ["Rating"
+    ("0" "clear" chai-library-set-rating-0)
+    ("1" "1 star" chai-library-set-rating-1)
+    ("2" "2 stars" chai-library-set-rating-2)
+    ("3" "3 stars" chai-library-set-rating-3)
+    ("4" "4 stars" chai-library-set-rating-4)
+    ("5" "5 stars" chai-library-set-rating-5)]
+   ["Files"
+    ("R" "auto rename all" chai-library-auto-rename-all)
+    ("d" "delete" chai-library-delete)]])
 
 ;;; Data Conversion
 
