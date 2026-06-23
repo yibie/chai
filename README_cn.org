@@ -103,6 +103,13 @@ Chai 的 Library 是一个 Org 文件目录。只要将 =.org= 文件放入
 - =C-u M-x chai-library-import= —— 导入单个指定文件
 - =M-x chai-library-auto-rename-all= —— 重命名/接管知识库目录中所有未规范命名的 =.org= 文件
 
+*** 网页导入：Copy as Org Mode 浏览器插件
+
+对于网页文章，建议使用 [[https://github.com/yibie/Copy-as-org-mode-chrome][Copy as Org Mode]] 浏览器插件。它已支持
+[[https://github.com/alexkreidler/Defuddle][defuddle]]，复制出的内容会包含作者、标题等元信息，并且已经是 Org 格式。
+直接将其粘贴到 =chai-library-directory=，Chai 会自动接管并保持元信息完整，
+无需手动修改文件名。
+
 通过命令行：
 
 #+begin_src bash

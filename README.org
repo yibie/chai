@@ -110,6 +110,13 @@ them into Org and move them into the library:
 - =C-u M-x chai-library-import= — Import a single specified file
 - =M-x chai-library-auto-rename-all= — Rename/adopt all unmanaged =.org= files already in the library directory
 
+*** For Web Pages: Copy as Org Mode Chrome Extension
+
+For web articles, use the [[https://github.com/yibie/Copy-as-org-mode-chrome][Copy as Org Mode]] browser extension. It supports
+[[https://github.com/alexkreidler/Defuddle][defuddle]], so copied pages include author, title, and other metadata already
+formatted as Org. Paste the result directly into =chai-library-directory=; Chai
+will adopt it with the metadata intact, no manual filename editing required.
+
 From the terminal:
 
 #+begin_src bash
