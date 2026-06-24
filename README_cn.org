@@ -389,6 +389,19 @@ Yibie <yibie@outlook.com>
 
 * Changelog
 
+** v2.1.0 (2026-06)
+
+- *Headline 导出*：Org 导出改为按原文顺序的 headline 格式，使用动态 =#+SEQ_TODO= 声明
+  高亮类型 TODO 状态，源元数据放入 =:PROPERTIES:= 抽屉，注释使用 =#+BEGIN_CHAI_ANNOTATION=
+  块。旧的 =CHAI_QUOTE= / =CHAI_COMMENT= special block 已移除。
+- *导出预览*：新增 =M-x chai-export-preview= 打开可编辑预览 buffer，以及
+  =M-x chai-export-preview-save= 直接写出预览文件。
+- *导出文件头*：导出标题优先使用源文件 =#+TITLE=，没有时回退到源文件名。
+- *Library 快捷菜单*：=?= 在 Library 表格中打开 transient 快捷命令菜单。
+- *README 重写*：README.org 与 README_cn.org 围绕当前的 Library + 高亮/评论 + 导出预览
+  工作流重写。
+- *浏览器插件*：README 推荐 [[https://github.com/yibie/Copy-as-org-mode-chrome][Copy as Org Mode]] 插件，用于导入带元信息的网页。
+
 ** v2.0.0 (2026-06)
 
 - *移除 Refinery*：移除中间工作台和笔记保存流程，Chai 聚焦于知识库管理与高亮导出。

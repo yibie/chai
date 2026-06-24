@@ -416,6 +416,23 @@ Yibie <yibie@outlook.com>
 
 * Changelog
 
+** v2.1.0 (2026-06)
+
+- *Headline export*: Org export now uses source-ordered headlines with dynamic
+  =#+SEQ_TODO= keywords, source metadata in =:PROPERTIES:= drawers, and
+  =#+BEGIN_CHAI_ANNOTATION= blocks for notes. The old =CHAI_QUOTE= /
+  =CHAI_COMMENT= special blocks are gone.
+- *Export preview*: New =M-x chai-export-preview= opens an editable preview
+  buffer, and =M-x chai-export-preview-save= writes directly to the preview file.
+- *Export headers*: Exported file titles now prefer the source =#+TITLE= and
+  fall back to the source file name.
+- *Library transient menu*: =?= opens a quick transient command menu in the
+  Library table.
+- *README rewrite*: README.org and README_cn.org rewritten around the current
+  Library + Highlight/Comment + Export Preview workflow.
+- *Browser extension*: README now recommends [[https://github.com/yibie/Copy-as-org-mode-chrome][Copy as Org Mode]] for importing web
+  pages with metadata.
+
 ** v2.0.0 (2026-06)
 
 - *Refinery removed*: The intermediate Refinery workbench and note-saving flow
