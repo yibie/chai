@@ -235,6 +235,15 @@ Right-click a chai link to change type, edit the note, remove the highlight, or
 copy the highlighted text. With an active region, right-click to highlight it as
 =important=, =idea=, =question=, =key=, or another type.
 
+When a region is active, the context menu also offers:
+
+- *Highlight with note...* — highlight the region and attach a note (annotation)
+- *Add comment* — wrap the region in a =#+BEGIN_CHAI_COMMENT= block
+
+If no region is active, *Add comment* inserts an empty comment block at point.
+
+[[file:pics/chai-context-menu.png]]
+
 [[file:pics/chai-annotation.png]]
 
 *** Built-in Types

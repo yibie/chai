@@ -326,6 +326,20 @@ BACKEND is the export backend."
       (call-interactively #'chai-highlight-region)
     (user-error "No region selected")))
 
+(defun chai-mouse-highlight-annotate ()
+  "Highlight the active region with a note, prompting for type and note text."
+  (interactive)
+  (if (use-region-p)
+      (call-interactively #'chai-highlight-annotate)
+    (user-error "No region selected")))
+
+(defun chai-mouse-add-comment ()
+  "Add a CHAI_COMMENT block.
+If region is active, wrap it in the block.
+If not, insert an empty block at point."
+  (interactive)
+  (chai-insert-comment))
+
 (defun chai-context-menu (menu click)
   "Populate MENU with Chai actions for CLICK event.
 Adds highlight actions when right-clicking a chai link, and create-highlight
@@ -372,7 +386,15 @@ after the menu was opened."
                       :help "Highlight region as idea"))
         (define-key-after menu [chai-highlight-important]
           '(menu-item "Highlight important" chai-mouse-highlight-important
-                      :help "Highlight region as important")))))
+                      :help "Highlight region as important"))
+        (define-key-after menu [chai-highlight-separator2]
+          '(menu-item "--"))
+        (define-key-after menu [chai-highlight-annotate]
+          '(menu-item "Highlight with note..." chai-mouse-highlight-annotate
+                      :help "Highlight region with a note"))
+        (define-key-after menu [chai-add-comment]
+          '(menu-item "Add comment" chai-mouse-add-comment
+                      :help "Add a comment block, wrapping region if active")))))
   menu)
 
 ;;; Highlight Commands
