@@ -416,8 +416,14 @@ Yibie <yibie@outlook.com>
 
 * Changelog
 
-** v2.1.0 (2026-06)
+** v2.0.0 (2026-06)
 
+- *Workflow redesign*: Chai no longer forks content into a separate workbench.
+  You now read directly in ordinary Org files, mark text with standard Org links
+  (=[[chai:TYPE][TEXT]]=), add notes with standard Org blocks
+  (=#+BEGIN_CHAI_COMMENT=), and export collected marks only when needed.
+- *Refinery removed*: The intermediate Refinery workbench and note-saving flow
+  have been removed. Chai now focuses on Library management and highlight export.
 - *Headline export*: Org export now uses source-ordered headlines with dynamic
   =#+SEQ_TODO= keywords, source metadata in =:PROPERTIES:= drawers, and
   =#+BEGIN_CHAI_ANNOTATION= blocks for notes. The old =CHAI_QUOTE= /
@@ -428,19 +434,14 @@ Yibie <yibie@outlook.com>
   fall back to the source file name.
 - *Library transient menu*: =?= opens a quick transient command menu in the
   Library table.
-- *README rewrite*: README.org and README_cn.org rewritten around the current
-  Library + Highlight/Comment + Export Preview workflow.
-- *Browser extension*: README now recommends [[https://github.com/yibie/Copy-as-org-mode-chrome][Copy as Org Mode]] for importing web
-  pages with metadata.
-
-** v2.0.0 (2026-06)
-
-- *Refinery removed*: The intermediate Refinery workbench and note-saving flow
-  have been removed. Chai now focuses on Library management and highlight export.
 - *tp.el removed*: Library table no longer depends on tp.el; status/rating
   changes refresh the standard tabulated-list display.
 - *Batch rename retained*: Duplicate auto-rename logic merged into a single
   core function used by both interactive import and the batch script.
+- *README rewrite*: README.org and README_cn.org rewritten around the current
+  Library + Highlight/Comment + Export Preview workflow.
+- *Browser extension*: README now recommends [[https://github.com/yibie/Copy-as-org-mode-chrome][Copy as Org Mode]] for importing web
+  pages with metadata.
 
 ** v1.1.0 (2026-02)
 
