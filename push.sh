@@ -1,8 +1,7 @@
 #!/bin/bash
-# /push — 推送到 yibie/chai 的 main 分支
+# /push — 推送到 yibie/chai
 set -e
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$REPO_ROOT"
-echo "🚀 push to yibie/chai main..."
-git push chai main "$@"
+cd "$(dirname "$0")"
+echo "🚀 push to yibie/chai..."
+git push origin main "$@"
 echo "✅ done"

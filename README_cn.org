@@ -221,8 +221,11 @@ emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
 Chai 提供 12 种语义化高亮类型。每种类型都对应一个 face，因此高亮会直接显示在
 buffer 中。face 同时适配浅色/深色主题，你也可以自定义或新增类型。
 
-在 chai 链接上右键，可以修改类型、编辑注释、移除高亮、复制高亮文本。选中区域后
-右键，可以快速将其高亮为 =important=、=idea=、=question=、=key= 或其他类型。
+在启用 Chai 的 Org buffer 中任意位置右键，都可以看到 Chai 菜单。区域命令会一直显示；
+选中区域后使用它们，可以按 =chai-highlight-types= 中的任意类型高亮；=Chai: highlight region...=
+可选择任意类型，=Chai: highlight TYPE= 快捷项会从 =chai-highlight-types= 动态生成，
+=Chai: highlight with note...= 会同时添加注释，=Chai: add comment= 会把选区包进 =#+BEGIN_CHAI_COMMENT= 块。在 chai 链接上右键，
+可以修改类型、编辑注释、移除高亮、复制高亮文本。
 
 [[file:pics/chai-context-menu.png]]
 

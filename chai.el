@@ -292,67 +292,33 @@ BACKEND is the export backend."
     (kill-new text)
     (message "Copied: %s" text)))
 
-(defun chai-mouse-highlight-region (type)
-  "Highlight the active region with TYPE."
-  (interactive)
-  (if (use-region-p)
-      (chai-highlight-region (region-beginning) (region-end) type)
-    (user-error "No region selected")))
-
-(defun chai-mouse-highlight-important ()
-  "Highlight the active region as important."
-  (interactive)
-  (chai-mouse-highlight-region "important"))
-
-(defun chai-mouse-highlight-idea ()
-  "Highlight the active region as idea."
-  (interactive)
-  (chai-mouse-highlight-region "idea"))
-
-(defun chai-mouse-highlight-question ()
-  "Highlight the active region as question."
-  (interactive)
-  (chai-mouse-highlight-region "question"))
-
-(defun chai-mouse-highlight-key ()
-  "Highlight the active region as key."
-  (interactive)
-  (chai-mouse-highlight-region "key"))
-
-(defun chai-mouse-highlight-other ()
-  "Highlight the active region, prompting for type."
-  (interactive)
-  (if (use-region-p)
-      (call-interactively #'chai-highlight-region)
-    (user-error "No region selected")))
-
-(defun chai-mouse-highlight-annotate ()
-  "Highlight the active region with a note, prompting for type and note text."
-  (interactive)
-  (if (use-region-p)
-      (call-interactively #'chai-highlight-annotate)
-    (user-error "No region selected")))
-
-(defun chai-mouse-add-comment ()
-  "Add a CHAI_COMMENT block.
-If region is active, wrap it in the block.
-If not, insert an empty block at point."
-  (interactive)
-  (chai-insert-comment))
+(defun chai--context-menu-highlight-key (type)
+  "Return the context menu key for highlight TYPE."
+  (intern (format "chai-highlight-type-%s" type)))
 
 (defun chai-context-menu (menu click)
   "Populate MENU with Chai actions for CLICK event.
-Adds highlight actions when right-clicking a chai link, and create-highlight
-actions when a region is active.
+Adds a basic Chai action in Org buffers, highlight actions when right-clicking
+a chai link, and create-highlight actions when a region is active.
 
 Menu commands capture the clicked position so they work even if point has moved
 after the menu was opened."
   (save-excursion
     (let* ((pos (posn-point (event-start click)))
+           (region-p (use-region-p))
+           (region-start (and region-p (region-beginning)))
+           (region-end (and region-p (region-end)))
            (on-link (progn (goto-char pos) (chai--link-at-point-p))))
+      (define-key-after menu [chai-separator]
+        '(menu-item "--"))
+      (define-key-after menu [chai-add-comment]
+        (list 'menu-item "Chai: add comment"
+              (lambda () (interactive)
+                (if region-p
+                    (chai-insert-comment region-start region-end)
+                  (chai-insert-comment)))
+              :help "Add a comment block, wrapping region if active"))
       (when on-link
-        (define-key-after menu [chai-separator]
-          '(menu-item "--"))
         (define-key-after menu [chai-change-type]
           (list 'menu-item "Chai: change type"
                 (lambda () (interactive) (chai-mouse-change-type pos))
@@ -369,32 +335,43 @@ after the menu was opened."
           (list 'menu-item "Chai: copy text"
                 (lambda () (interactive) (chai-mouse-copy-text pos))
                 :help "Copy the highlighted text")))
-      (when (use-region-p)
-        (define-key-after menu [chai-region-separator]
-          '(menu-item "--"))
-        (define-key-after menu [chai-highlight-other]
-          '(menu-item "Highlight other..." chai-mouse-highlight-other
-                      :help "Highlight region with any type"))
-        (define-key-after menu [chai-highlight-key]
-          '(menu-item "Highlight key" chai-mouse-highlight-key
-                      :help "Highlight region as key"))
-        (define-key-after menu [chai-highlight-question]
-          '(menu-item "Highlight question" chai-mouse-highlight-question
-                      :help "Highlight region as question"))
-        (define-key-after menu [chai-highlight-idea]
-          '(menu-item "Highlight idea" chai-mouse-highlight-idea
-                      :help "Highlight region as idea"))
-        (define-key-after menu [chai-highlight-important]
-          '(menu-item "Highlight important" chai-mouse-highlight-important
-                      :help "Highlight region as important"))
-        (define-key-after menu [chai-highlight-separator2]
-          '(menu-item "--"))
-        (define-key-after menu [chai-highlight-annotate]
-          '(menu-item "Highlight with note..." chai-mouse-highlight-annotate
-                      :help "Highlight region with a note"))
-        (define-key-after menu [chai-add-comment]
-          '(menu-item "Add comment" chai-mouse-add-comment
-                      :help "Add a comment block, wrapping region if active")))))
+      (define-key-after menu [chai-region-separator]
+        '(menu-item "--"))
+      (define-key-after menu [chai-highlight-region]
+        (list 'menu-item "Chai: highlight region..."
+              (lambda () (interactive)
+                (if region-p
+                    (chai-highlight-region
+                     region-start region-end
+                     (completing-read "Highlight type: " (mapcar #'car chai-highlight-types)))
+                  (call-interactively #'chai-highlight-region)))
+              :help "Highlight region with any type"))
+      (dolist (type-def chai-highlight-types)
+        (let* ((type (car type-def))
+               (menu-key (vector (chai--context-menu-highlight-key type))))
+          (define-key-after menu menu-key
+            (list 'menu-item (format "Chai: highlight %s" type)
+                  (lambda () (interactive)
+                    (if region-p
+                        (chai-highlight-region region-start region-end type)
+                      (if (use-region-p)
+                          (chai-highlight-region (region-beginning) (region-end) type)
+                        (user-error "No region selected"))))
+                  :help (format "Highlight region as %s" type)))))
+      (define-key-after menu [chai-highlight-separator2]
+        '(menu-item "--"))
+      (define-key-after menu [chai-highlight-annotate]
+        (list 'menu-item "Chai: highlight with note..."
+              (lambda () (interactive)
+                (if region-p
+                    (let* ((type (completing-read "Highlight type: " (mapcar #'car chai-highlight-types)))
+                           (note (read-string "Note: ")))
+                      (if (string-empty-p note)
+                          (user-error
+                           "Note cannot be empty; use chai-highlight-region for plain highlights")
+                        (chai-highlight-annotate region-start region-end type note)))
+                  (call-interactively #'chai-highlight-annotate)))
+              :help "Highlight region with a note"))))
   menu)
 
 ;;; Highlight Commands
@@ -418,6 +395,7 @@ Format: [[chai:TYPE][TEXT]]"
   (let* ((text (buffer-substring-no-properties start end))
          (link-path (format "chai:%s" type)))
     (delete-region start end)
+    (goto-char start)
     (insert (format "[[%s][%s]]" link-path text))
     (chai--after-org-structure-change)))
 
@@ -436,6 +414,7 @@ Format: [[chai:TYPE:NOTE][TEXT]]"
   (let* ((text (buffer-substring-no-properties start end))
          (link-path (format "chai:%s:%s" type note)))
     (delete-region start end)
+    (goto-char start)
     (insert (format "[[%s][%s]]" link-path text))
     (chai--after-org-structure-change)
     (chai--render-note-overlays (- (point) (length text) (length link-path) 6)
@@ -526,6 +505,14 @@ PATH format is either \\='TYPE\\=' or \\='TYPE:NOTE\\='."
 (defvar-local chai--context-panel-timer nil
   "Idle timer for debounced context panel updates.")
 
+(defun chai--install-context-menu-keys ()
+  "Install Chai's context menu keys in the current buffer."
+  (when (boundp 'context-menu-mode-map)
+    (let ((map (copy-keymap (current-local-map))))
+      (define-key map [down-mouse-3] (lookup-key context-menu-mode-map [down-mouse-3]))
+      (define-key map [mouse-3] #'ignore)
+      (use-local-map map))))
+
 (defun chai--collect-highlights ()
   "Scan current buffer and return all chai highlights.
 Returns a list of (TYPE NOTE TEXT LINE-NUM MATCH-BEG)."
@@ -565,26 +552,27 @@ Returns a list of plists (:kind comment :text TEXT :line LINE)."
     (nreverse results)))
 
 ;;;###autoload
-(defun chai-insert-comment ()
+(defun chai-insert-comment (&optional start end)
   "Insert a CHAI_COMMENT block.
-If a region is active, wrap the selected text in the block.
-Otherwise insert an empty block at point."
+If START and END are provided, wrap that range in the block.
+Otherwise, wrap the active region or insert an empty block at point."
   (interactive)
-  (let* ((region-p (use-region-p))
-         (body (if region-p
-                   (buffer-substring-no-properties (region-beginning) (region-end))
+  (let* ((range-p (or (and start end) (use-region-p)))
+         (start (or start (if range-p (region-beginning) (point))))
+         (end (or end (if range-p (region-end) (point))))
+         (body (if range-p
+                   (buffer-substring-no-properties start end)
                  ""))
-         (start (if region-p (region-beginning) (point)))
-         (end (if region-p (region-end) (point))))
-    (when region-p
+         (empty-p (string-empty-p body)))
+    (when range-p
       (delete-region start end))
     (goto-char start)
-    (insert (if (string-empty-p body)
+    (insert (if empty-p
                 "#+BEGIN_CHAI_COMMENT\n#+END_CHAI_COMMENT\n"
               (format "#+BEGIN_CHAI_COMMENT\n%s\n#+END_CHAI_COMMENT\n" body)))
     (chai--after-org-structure-change)
     (forward-line -1)
-    (when (string-empty-p body)
+    (when empty-p
       (end-of-line))))
 
 ;;;###autoload
@@ -988,9 +976,13 @@ Uses the same scope and file naming as `chai-export-preview'."
   "Setup Chai features in the current Org buffer."
   (chai--org-buffer-render-annotations)
   (when (boundp 'context-menu-functions)
-    (add-hook 'context-menu-functions #'chai-context-menu nil t)))
+    (add-hook 'context-menu-functions #'chai-context-menu nil t)
+    (chai--install-context-menu-keys)))
 
 (add-hook 'org-mode-hook #'chai--org-buffer-setup)
+
+(when (derived-mode-p 'org-mode)
+  (chai--org-buffer-setup))
 
 ;;; Integration with Chai Library
 

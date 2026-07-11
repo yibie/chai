@@ -231,16 +231,19 @@ Chai provides 12 semantic highlight types. Each type is rendered with a face, so
 highlights are visible directly in the buffer. Faces work in both light and dark
 themes, and you can customize them or add your own types.
 
-Right-click a chai link to change type, edit the note, remove the highlight, or
-copy the highlighted text. With an active region, right-click to highlight it as
-=important=, =idea=, =question=, =key=, or another type.
+Right-click anywhere in a Chai-enabled Org buffer to add a free-standing
+comment. Right-click a chai link to change type, edit the note, remove the
+highlight, or copy the highlighted text. With an active region, right-click to
+highlight it with any type from =chai-highlight-types=.
 
-When a region is active, the context menu also offers:
+The context menu also shows region commands. Use them with an active region:
 
+- *Chai: highlight region...* — choose any highlight type for the region
+- *Chai: highlight TYPE* — quick entries generated from =chai-highlight-types=
 - *Highlight with note...* — highlight the region and attach a note (annotation)
-- *Add comment* — wrap the region in a =#+BEGIN_CHAI_COMMENT= block
+- *Chai: add comment* — wrap the region in a =#+BEGIN_CHAI_COMMENT= block
 
-If no region is active, *Add comment* inserts an empty comment block at point.
+If no region is active, *Chai: add comment* inserts an empty comment block at point.
 
 [[file:pics/chai-context-menu.png]]
 

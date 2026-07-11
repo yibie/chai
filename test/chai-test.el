@@ -494,6 +494,111 @@ position and use it even when point has moved elsewhere."
       (funcall cmd)
       (should (string= (current-kill 0 t) "target")))))
 
+(ert-deftest chai-test-context-menu-shows-chai-action-on-plain-click ()
+  "chai-context-menu exposes Chai even away from links or active regions."
+  (chai-test--with-temp-org "plain text"
+    (let* ((menu (make-sparse-keymap))
+           (click-event (list 'mouse-3 (posn-at-point 1 (selected-window))))
+           (result-menu (chai-context-menu menu click-event)))
+      (should (commandp (lookup-key result-menu [chai-add-comment])))
+      (should (commandp (lookup-key result-menu [chai-highlight-type-important])))
+      (should (commandp (lookup-key result-menu [chai-highlight-region])))
+      (should (commandp (lookup-key result-menu [chai-highlight-annotate]))))))
+
+(ert-deftest chai-test-context-menu-respects-custom-highlight-types ()
+  "Context menu quick highlight entries come from `chai-highlight-types'."
+  (chai-test--with-temp-org "select this text"
+    (let ((chai-highlight-types '(("custom" . chai-highlight-important)
+                                  ("review" . chai-highlight-idea))))
+      (setq-local transient-mark-mode t)
+      (goto-char 1)
+      (set-mark (point))
+      (goto-char 12)
+      (activate-mark)
+      (let* ((menu (make-sparse-keymap))
+             (click-event (list 'mouse-3 (posn-at-point 1 (selected-window))))
+             (result-menu (chai-context-menu menu click-event))
+             (cmd (lookup-key result-menu [chai-highlight-type-custom])))
+        (should (commandp cmd))
+        (should (commandp (lookup-key result-menu [chai-highlight-type-review])))
+        (should-not (lookup-key result-menu [chai-highlight-type-important]))
+        (deactivate-mark)
+        (funcall cmd)
+        (should (string= (buffer-string) "[[chai:custom][select this]] text"))))))
+
+(ert-deftest chai-test-context-menu-region-highlight-uses-captured-region ()
+  "Context menu region highlight commands keep the selected bounds."
+  (chai-test--with-temp-org "select this text"
+    (setq-local transient-mark-mode t)
+    (goto-char 1)
+    (set-mark (point))
+    (goto-char 12)
+    (activate-mark)
+    (let* ((menu (make-sparse-keymap))
+           (click-event (list 'mouse-3 (posn-at-point 1 (selected-window))))
+           (result-menu (chai-context-menu menu click-event))
+           (cmd (lookup-key result-menu [chai-highlight-type-important])))
+      (deactivate-mark)
+      (goto-char (point-max))
+      (should (commandp cmd))
+      (funcall cmd)
+      (should (string= (buffer-string) "[[chai:important][select this]] text")))))
+
+(ert-deftest chai-test-context-menu-region-annotate-uses-captured-region ()
+  "Context menu annotate command keeps the selected bounds."
+  (chai-test--with-temp-org "select this text"
+    (setq-local transient-mark-mode t)
+    (goto-char 1)
+    (set-mark (point))
+    (goto-char 12)
+    (activate-mark)
+    (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "idea"))
+              ((symbol-function 'read-string) (lambda (&rest _) "note")))
+      (let* ((menu (make-sparse-keymap))
+             (click-event (list 'mouse-3 (posn-at-point 1 (selected-window))))
+             (result-menu (chai-context-menu menu click-event))
+             (cmd (lookup-key result-menu [chai-highlight-annotate])))
+        (deactivate-mark)
+        (goto-char (point-max))
+        (should (commandp cmd))
+        (funcall cmd)
+        (should (string= (buffer-string) "[[chai:idea:note][select this]] text"))))))
+
+(ert-deftest chai-test-context-menu-add-comment-uses-captured-region ()
+  "Context menu comment command wraps the selected bounds."
+  (chai-test--with-temp-org "my note"
+    (setq-local transient-mark-mode t)
+    (goto-char 1)
+    (set-mark (point))
+    (goto-char 8)
+    (activate-mark)
+    (let* ((menu (make-sparse-keymap))
+           (click-event (list 'mouse-3 (posn-at-point 1 (selected-window))))
+           (result-menu (chai-context-menu menu click-event))
+           (cmd (lookup-key result-menu [chai-add-comment])))
+      (deactivate-mark)
+      (should (commandp cmd))
+      (funcall cmd)
+      (should (string= (buffer-string)
+                       "#+BEGIN_CHAI_COMMENT\nmy note\n#+END_CHAI_COMMENT\n")))))
+
+(ert-deftest chai-test-org-buffer-installs-context-menu-mouse-keys ()
+  "Chai Org buffers bind right-click to the context menu locally."
+  (chai-test--with-temp-org "select this text"
+    (let ((down-binding (lookup-key (current-local-map) [down-mouse-3]))
+          (up-binding (lookup-key (current-local-map) [mouse-3])))
+      (should down-binding)
+      (should-not (eq down-binding 'mouse-save-then-kill))
+      (should (eq up-binding 'ignore)))))
+
+(ert-deftest chai-test-load-installs-context-menu-in-current-org-buffer ()
+  "Loading chai.el from an existing Org buffer installs the context menu there."
+  (skip-unless (boundp 'context-menu-functions))
+  (chai-test--with-temp-org "plain text"
+    (setq-local context-menu-functions nil)
+    (load (expand-file-name "chai.el" default-directory) nil t)
+    (should (memq #'chai-context-menu context-menu-functions))))
+
 (ert-deftest chai-test-mouse-remove-highlight ()
   "chai-mouse-remove-highlight restores the plain text."
   (chai-test--with-temp-org "[[chai:important][remove me]]"
@@ -522,17 +627,6 @@ position and use it even when point has moved elsewhere."
     (should-error (chai-mouse-copy-text) :type 'user-error)
     (should-error (chai-mouse-change-type) :type 'user-error)
     (should-error (chai-mouse-edit-annotation) :type 'user-error)))
-
-(ert-deftest chai-test-mouse-region-highlight ()
-  "chai-mouse-highlight-region highlights the active region."
-  (chai-test--with-temp-org "select this text"
-    (setq-local transient-mark-mode t)
-    (goto-char 1)
-    (set-mark (point))
-    (goto-char 12)
-    (activate-mark)
-    (chai-mouse-highlight-region "important")
-    (should (string= (buffer-string) "[[chai:important][select this]] text"))))
 
 ;;; Export preview
 
