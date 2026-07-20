@@ -72,6 +72,8 @@ pip install pyobjc-framework-Vision Pillow
 
 ;; Optional: Global keybindings
 (global-set-key (kbd "C-c l") #'chai-library-open)
+(global-set-key (kbd "C-c b") #'chai-library-open-book)
+(global-set-key (kbd "C-c i") #'chai-library-import)
 #+end_src
 
 ** Directories
@@ -138,6 +140,13 @@ python convert-to-org.py \
 - Markdown
 - EPUB
 - HTML
+
+** Opening a Book Directly
+
+Run =M-x chai-library-open-book= to show the Library's filenames directly in
+the minibuffer. Type to filter, press =RET=, and Chai opens the selected Org
+file without opening the Library table first. The command only lists =.org=
+filenames; it does not parse book contents or metadata before selection.
 
 ** File Naming Convention
 
@@ -362,6 +371,7 @@ The =L25= link jumps to the source line in the original file.
 | Command | Function |
 |---------+----------|
 | =M-x chai-library-open= | Open the Library table |
+| =M-x chai-library-open-book= | Select a book in the minibuffer and open it |
 | =M-x chai-library-import= | Import files from inbox (or a single file with prefix) |
 | =M-x chai-library-auto-rename-all= | Rename/adopt all unmanaged =.org= files in the library directory |
 | =M-x chai-library-refresh= | Refresh the Library table |
@@ -392,7 +402,8 @@ The =L25= link jumps to the source line in the original file.
 1. *Put materials in the library* — Drop =.org= files into
    =chai-library-directory=, or import PDF/Markdown/EPUB/HTML with
    =M-x chai-library-import=.
-2. *Open Library* — =M-x chai-library-open=, press =RET= to open a document.
+2. *Open a book* — run =M-x chai-library-open-book= to select one in the minibuffer,
+   or run =M-x chai-library-open= and press =RET= on the current entry.
 3. *Highlight* — Select text and =M-x chai-highlight-region= or
    =M-x chai-highlight-annotate=.
 4. *Export* — =M-x chai-export-highlights-copy-org= and paste into your notes,

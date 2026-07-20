@@ -987,6 +987,8 @@ Uses the same scope and file naming as `chai-export-preview'."
 ;;; Integration with Chai Library
 
 (autoload 'chai-library-open "chai-library-table" "Open the Chai Library interface." t)
+(autoload 'chai-library-open-book "chai-library" "Select a Chai Library filename and open it." t)
+(autoload 'chai-library-import "chai-library" "Import external files into Chai Library." t)
 (autoload 'chai-library-open-book-by-id "chai-library" "Open book by ID." t)
 
 (provide 'chai)

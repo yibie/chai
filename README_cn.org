@@ -67,6 +67,8 @@ pip install pyobjc-framework-Vision Pillow
 
 ;; 可选：全局快捷键
 (global-set-key (kbd "C-c l") #'chai-library-open)
+(global-set-key (kbd "C-c b") #'chai-library-open-book)
+(global-set-key (kbd "C-c i") #'chai-library-import)
 #+end_src
 
 ** 目录结构
@@ -131,6 +133,12 @@ python convert-to-org.py \
 - Markdown
 - EPUB
 - HTML
+
+** 直接打开条目
+
+运行 =M-x chai-library-open-book=，minibuffer 会直接显示 Library 中的原始文件名，
+不再重新拼接标题、作者或 ID。输入关键词筛选后按 =RET=，即可直接打开选中的 Org 文件，
+不需要先打开 Library 表格。命令只列出 =.org= 文件名，选中前不会解析正文或元数据。
 
 ** 文件名格式
 
@@ -329,6 +337,7 @@ annotation 文本
 | 命令 | 功能 |
 |------+------|
 | =M-x chai-library-open= | 打开 Library 表格 |
+| =M-x chai-library-open-book= | 在 minibuffer 选择书籍并直接打开 |
 | =M-x chai-library-import= | 从 inbox 批量导入（加前缀导入单个文件） |
 | =M-x chai-library-auto-rename-all= | 重命名/接管知识库目录中所有未规范命名的 =.org= 文件 |
 | =M-x chai-library-refresh= | 刷新 Library 表格 |
@@ -358,7 +367,8 @@ annotation 文本
 
 1. *放入材料* —— 将 =.org= 文件直接放入 =chai-library-directory=，或用
    =M-x chai-library-import= 导入 PDF/Markdown/EPUB/HTML。
-2. *打开 Library* —— =M-x chai-library-open=，按 =RET= 打开文档。
+2. *打开材料* —— 直接运行 =M-x chai-library-open-book= 在 minibuffer 选择并打开，
+   或运行 =M-x chai-library-open= 后按 =RET= 打开当前条目。
 3. *高亮* —— 选中文字，运行 =M-x chai-highlight-region= 或
    =M-x chai-highlight-annotate=。
 4. *导出* —— 运行 =M-x chai-export-highlights-copy-org= 粘贴到自己的笔记，

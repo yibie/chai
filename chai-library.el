@@ -344,6 +344,25 @@ Used by `chai:' links."
         (find-file (chai-book-file-path book))
       (message "Chai Library: Book with ID %s not found." id))))
 
+;;;###autoload
+(defun chai-library-open-book ()
+  "Select a Chai Library filename in the minibuffer and open it."
+  (interactive)
+  (unless (file-directory-p chai-library-directory)
+    (user-error "Chai Library directory does not exist: %s"
+                chai-library-directory))
+  (let ((files (seq-remove
+                (lambda (file) (string-prefix-p ".#" file))
+                (directory-files chai-library-directory nil "\\.org\\'"))))
+    (unless files
+      (user-error "Chai Library is empty: %s" chai-library-directory))
+    (let* ((completion-ignore-case t)
+           (selected (completing-read "Open Chai book: " files nil t))
+           (path (expand-file-name selected chai-library-directory)))
+      (unless (file-exists-p path)
+        (user-error "File not found (stale entry?): %s" path))
+      (find-file path))))
+
 (defun chai-library--parse-status-rating (str)
   "Parse status-rating string like \"reading-4\" into (status . rating)."
   (let ((s (string-trim (or str ""))))

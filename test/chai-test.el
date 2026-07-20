@@ -349,6 +349,30 @@ Binds a small `chai-highlight-types' and freezes the exported timestamp."
               'chai-library-menu))
   (should (fboundp 'chai-library-menu)))
 
+(ert-deftest chai-test-library-open-book-minibuffer-selection ()
+  "Minibuffer selection opens the selected Chai Library book."
+  (let* ((dir (make-temp-file "chai-library-" t))
+         (file-a (expand-file-name
+                  "20260720T120001__Author-A__Book-A.org" dir))
+         (file-b (expand-file-name
+                  "20260720T120002__Author-B__Book-B.org" dir))
+         choices)
+    (unwind-protect
+        (let ((chai-library-directory dir))
+          (with-temp-file file-a (insert "Book A\n"))
+          (with-temp-file file-b (insert "Book B\n"))
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (_prompt collection &rest _)
+                       (setq choices collection)
+                       (file-name-nondirectory file-b))))
+            (chai-library-open-book))
+          (should (= (length choices) 2))
+          (should (member (file-name-nondirectory file-b) choices))
+          (should (equal (file-truename (buffer-file-name))
+                         (file-truename file-b))))
+      (chai-test--kill-file-buffers-under dir)
+      (delete-directory dir t))))
+
 (ert-deftest chai-test-library-rename-unmanaged-without-metadata ()
   "Unmanaged org files without metadata are adopted using the filename as title."
   (let* ((dir (make-temp-file "chai-library-" t))
