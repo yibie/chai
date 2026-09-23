@@ -41,7 +41,7 @@ The workflow now has five connected parts:
 📖 Read → 🔖 Mark → 🔎 Find → 💬 Ask with citations → ✍️ Export with chapter context
 #+end_quote
 
-** What's new in v2.4.0
+** What's new in v2.1.0
 
 - *Notes keep their place in the book.* Org copy, heading buffers, preview, and
   direct save now reproduce the relevant source heading path. A note under
@@ -747,7 +747,7 @@ Yibie <yibie@outlook.com>
 
 * Changelog
 
-** v2.4.0 (2026-09)
+** v2.1.0 (2026-09)
 
 - Org copy, heading buffers, preview, and direct save preserve the relevant
   source heading hierarchy; range and subtree export restore ancestors without
@@ -758,10 +758,6 @@ Yibie <yibie@outlook.com>
 - Loading =chai= now reliably activates the optional superchat integration when
   superchat becomes available; =/chai= and conversation-level cowork mode remain
   explicit opt-ins
-- The v2.2/v2.3 search, grounded-answer, and optional semantic-recall work is now
-  shipped together as a public release
-
-** v2.3.0 (2026-08)
 
 - Added =chai-ask=: streamed answers grounded in the Library, with validated
   citations that jump back to the passage they came from
@@ -770,8 +766,6 @@ Yibie <yibie@outlook.com>
 - Added optional semantic recall (=chai-vector-build=), a third fused channel
   finding passages by meaning rather than wording
 - Both run against a local model server; nothing leaves the machine
-
-** v2.2.0 (2026-08)
 
 - Added cross-library search: =chai-search= and =chai-search-highlights= find
   passages across every book and jump to the exact position

@@ -35,7 +35,7 @@ Chai 是一个本地优先的 Emacs 阅读工作流：把一个 Org 书库变成
 📖 阅读 → 🔖 标记 → 🔎 找回 → 💬 带引用提问 → ✍️ 带章节上下文导出
 #+end_quote
 
-** v2.4.0 新特性
+** v2.1.0 新特性
 
 - *笔记不会丢掉它在书里的位置。* Org 复制、heading buffer、preview 和直接保存都会
   还原相关的原文标题路径。位于“第五章 → 共识协议 → Raft”下的笔记仍在这套结构里，
@@ -654,7 +654,7 @@ Yibie <yibie@outlook.com>
 
 * Changelog
 
-** v2.4.0 (2026-09)
+** v2.1.0 (2026-09)
 
 - Org 复制、heading buffer、preview 与直接保存会保留相关原文标题层级；选区与子树导出
   会补齐祖先标题，但不会带入无关笔记
@@ -662,17 +662,12 @@ Yibie <yibie@outlook.com>
 - 新增 =chai-index-auto-mode=，保存书籍后在空闲时增量刷新该书索引
 - 加载 =chai= 后，superchat 出现时会可靠地接好可选集成；=/chai= 和对话级 cowork
   仍需用户明确开启
-- v2.2/v2.3 的全文检索、带引用回答和可选语义召回在本次公开版本中一并发布
-
-** v2.3.0 (2026-08)
 
 - 新增 =chai-ask=：基于知识库的流式回答，引用经过校验且可跳回原文段落
 - 新增 =chai-context.el=：编号段落与引用校验，任何聊天客户端都能用的接缝；
   =chai-superchat.el= 据此把 Chai 接进 superchat
 - 新增可选的语义召回（=chai-vector-build=），作为第三路融合通道按语义而非字面查找
 - 两者都依赖本地模型服务，数据不出本机
-
-** v2.2.0 (2026-08)
 
 - 新增跨库检索：=chai-search= 与 =chai-search-highlights= 可跨所有条目查找段落
   并跳转到精确位置
