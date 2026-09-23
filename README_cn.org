@@ -7,9 +7,9 @@
 
 "拆"——将复杂的知识拆解、消化、重组为自己的理解。
 
-Chai 是一个轻量级的 Emacs 阅读工作流。它不会把原文搬进另一个笔记系统加工，而是让你在
-普通的 Org 文件里直接阅读，并在原地留下轻量标记；Chai 再为这些标记提供颜色显示、鼠标
-操作、注释 overlay、上下文导航和结构化导出。
+Chai 是一个本地优先的 Emacs 阅读工作流：把一个 Org 书库变成可以标记、检索和提问的
+知识库。你仍在普通 Org 文件中阅读和批注；导出笔记时保留它所在的章、节结构；需要回看时
+跨整个 Library 检索；需要综合时让本地模型回答，并从引用跳回原文的精确段落。
 
 早期 Chai 包含一个更重的 Refinery 流程：把原文内容分叉到独立工作台，在那里改写、压缩、
 再保存为笔记。现在的设计更轻：
@@ -23,15 +23,34 @@ Chai 是一个轻量级的 Emacs 阅读工作流。它不会把原文搬进另�
 即使不加载 Chai，这些文件依然是可读、可编辑的普通 Org 文档；加载 Chai 后，同一套语法会
 获得语义化 face、鼠标命令、注释 overlay、上下文面板和一键导出。
 
-整个工作流分为三个部分：
+现在的工作流由五个相连的部分组成：
 
-1. *Library（知识库）* —— 以 Org 文件管理阅读材料
-2. *高亮与评论* —— 在阅读过程中标记重要片段并写下想法
-3. *导出与预览* —— 将标记导出或预览为 Org 笔记
+1. *Library（知识库）* —— 用普通 Org 文件管理阅读材料
+2. *高亮与评论* —— 在原文所在位置标记重要片段
+3. *保留上下文的导出* —— 笔记继续位于原来的章、节标题之下
+4. *全库检索* —— 跨整个 Library 查找段落，并跳到原文精确位置
+5. *带依据的回答* —— 让本地模型综合段落，并校验每一个引用
 
 #+begin_quote
-📖 在 Library 中阅读 → 🔖 高亮 / 评论 → ✍️ 导出 / 预览到自己的笔记
+📖 阅读 → 🔖 标记 → 🔎 找回 → 💬 带引用提问 → ✍️ 带章节上下文导出
 #+end_quote
+
+** v2.4.0 新特性
+
+- *笔记不会丢掉它在书里的位置。* Org 复制、heading buffer、preview 和直接保存都会
+  还原相关的原文标题路径。位于“第五章 → 共识协议 → Raft”下的笔记仍在这套结构里，
+  而不是变成无上下文的一级条目；没有笔记的标题不会导出。
+- *全库检索不会卡住 Emacs。* 旁路 SQLite 索引在独立进程中增量重建；中文无需外部
+  分词器；标记过的段落优先；打开结果会落在原文精确位置。Library 表格中按 =f= 搜全库，
+  按 =F= 只搜光标所在的书。
+- *答案带有可检查的来源。* =chai-context.el= 提供编号段落和引用校验，
+  =chai-superchat.el= 把这套契约接入 superchat，=chai-ask= 是不使用聊天客户端时的退路；
+  可选向量召回则增加按语义匹配的第三路检索。
+- *没有迁移陷阱。* 原书始终是普通 Org 文件；全文与向量索引都是可丢弃的旁路数据库，
+  删除后只需重建。
+
+最短验证路径：先运行 =M-x chai-index-rebuild=，再运行 =M-x chai-search=。要验证
+结构化导出，在多层 Org 标题下放一个 Chai 标记，然后运行 =M-x chai-export-preview=。
 
 ** 演示
 
@@ -80,7 +99,8 @@ Chai 默认使用以下目录结构（均在 =~/.emacs.d/chai/= 下）：
 ├── library/          ;; 知识库文件（已接管的 .org 文件）
 ├── inbox/            ;; 待导入文件
 ├── archive/          ;; 导入后原文件归档
-└── exports/          ;; 可编辑的导出预览文件
+├── exports/          ;; 可编辑的导出预览文件
+└── index.db          ;; 可丢弃的检索与可选语义索引
 #+end_example
 
 可通过以下变量自定义：
@@ -91,6 +111,13 @@ Chai 默认使用以下目录结构（均在 =~/.emacs.d/chai/= 下）：
 | =chai-library-import-inbox= | 导入收件箱 | =~/.emacs.d/chai/inbox/= |
 | =chai-library-import-archive= | 归档目录 | =~/.emacs.d/chai/archive/= |
 | =chai-export-preview-directory= | 导出预览目录 | =~/.emacs.d/chai/exports/= |
+| =chai-export-heading-file= | 可编辑 heading buffer 的固定保存文件 | =nil= |
+| =chai-index-file= | 检索索引数据库 | =~/.emacs.d/chai/index.db= |
+| =chai-index-preview-chars= | 索引中为展示保存的段落字数 | =240= |
+| =chai-index-chunk-max-chars= | 单个段落的字数上限 | =800= |
+| =chai-index-progress-in-echo-area= | 在 echo area 显示重建进度 | =t= |
+| =chai-index-echo-interval= | 两条进度消息之间的最短间隔（秒） | =1.0= |
+| =chai-index-auto-delay= | 保存后多少秒空闲才重新索引 | =5= |
 
 * Library（知识库）
 
@@ -202,11 +229,15 @@ emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
 
 ** 存储语法
 
-在阅读 Org 文件时，使用 Chai 链接和自由评论块来标记片段：
+在阅读 Org 文件时，Chai 会根据选区是否包含实际换行，自动选择高亮的存储方式：
 
-- 高亮文本：=[[chai:TYPE][TEXT]]=
-- 带注释的高亮：=[[chai:TYPE:NOTE][TEXT]]=
+- 连续文本：=[[chai:TYPE][TEXT]]=；带注释时使用 =[[chai:TYPE:NOTE][TEXT]]=
+- 跨行文本：使用 =#+BEGIN_CHAI :type TYPE= ... =#+END_CHAI=，保留原始换行和段落
 - 自由评论块：=#+BEGIN_CHAI_COMMENT= ... =#+END_CHAI_COMMENT=
+
+连续文本仍使用 Org link 作为持久化标记，显示时使用配置的 Chai face；跨行文本使用
+special block，正文沿用 Org 的 `org-quote` 样式，block header 保留 `:type TYPE` 作为可见的
+类型标记。两种形式都会被收集器统一识别。
 
 ** 命令
 
@@ -219,6 +250,7 @@ emacs --batch -L . -l chai-library.el -l chai-library-batch-rename.el \
 | =M-x chai-insert-comment= | 插入 =#+BEGIN_CHAI_COMMENT= 块 |
 | =M-x chai-export-highlights-copy= | 以纯文本复制高亮与评论 |
 | =M-x chai-export-highlights-copy-org= | 以 Org 格式复制高亮与评论 |
+| =M-x chai-export-heading= | 打开可编辑的临时 heading buffer |
 | =M-x chai-export-preview= | 打开可编辑的 Org 预览 buffer |
 | =M-x chai-export-preview-save= | 直接保存 Org 导出到预览文件 |
 | =M-x chai-context-panel-toggle= | 切换高亮概览面板 |
@@ -265,6 +297,9 @@ buffer 中。face 同时适配浅色/深色主题，你也可以自定义或新�
         ("todo" . hl-line)))
 #+end_src
 
+内置 `key` face 在浅色主题下使用更明显的柔和琥珀色背景，避免和编辑区背景混在一起。
+如果需要其它配色，可以直接自定义这个 face，或替换 `chai-highlight-types` 中的对应项。
+
 ** 上下文面板
 
 按 =C-c p=（绑定后）切换侧边窗口，显示当前 buffer 所有高亮按类型分组。光标所在高亮的类型组会高亮显示，方便定位。
@@ -283,46 +318,241 @@ buffer 中。face 同时适配浅色/深色主题，你也可以自定义或新�
 - =M-x chai-insert-comment= 插入空块；若有选中区域，则将其包裹成评论块。
 - 评论块会按原文顺序与高亮一起导出。
 
+* 检索
+
+Chai 可以一次检索知识库里的所有条目，并直接跳到命中的段落。索引是一个旁路的
+SQLite 数据库，由你的 Org 文件生成，不会修改它们；删掉索引的代价只是重建一次。
+
+检索命令不需要额外配置：它们由 =chai= 通过 autoload 暴露，只要加载了 Chai 就能在
+=M-x= 里看到，第一次调用时才真正加载检索代码。
+
+** 建立索引
+
+| 命令 | 功能 |
+|------+------|
+| =M-x chai-index-rebuild= | 更新索引（只重读内容变化过的条目） |
+| =C-u M-x chai-index-rebuild= | 强制全量重建 |
+| =M-x chai-index-update-file= | 只重新索引当前 buffer 对应的条目 |
+| =M-x chai-index-status= | 查看已索引的条目数与段落数 |
+| =M-x chai-index-reset= | 删除整个索引 |
+| =M-x chai-index-stop= | 停止正在运行的重建 |
+| =M-x chai-index-auto-mode= | 保存后自动重新索引该条目 |
+
+交互调用时重建在**一个独立的 Emacs 进程**里进行，你的编辑会话完全不受影响，进度显示在
+echo area 与 mode line。重建过程中就可以检索：每本书完成即提交。随时可以停止，下次从中断处继续。
+
+重建是增量的：内容哈希未变的条目直接跳过，只有第一遍是昂贵的。开启
+=chai-index-auto-mode= 后，你保存过的条目会在几秒空闲之后自动重新索引，
+索引跟着你的阅读走，不用你去管。
+
+在 Library 表格里，=f= 检索所有条目，=F= 只检索光标所在的那一本。
+
+在一个 2788 本、790 MB Org 正文的真实库上实测：首次全量约三分钟，之后无变更的一遍约
+15 秒，索引约占 1.3 GB。重建进行中检索仍在毫秒级。索引是单个文件，随时可以删除。
+
+** 检索
+
+#+begin_src elisp
+M-x chai-search             ;; 检索所有条目
+M-x chai-search-highlights  ;; 只检索你标注过的段落
+#+end_src
+
+在 =*Chai Search*= buffer 中：
+
+| 按键 | 操作 |
+|------+------|
+| =RET= / =mouse-1= | 在当前窗口打开该段落 |
+| =o= | 在另一个窗口打开 |
+| =n= / =p= | 下一条 / 上一条 |
+| =g= | 重新执行上次查询 |
+| =q= | 关闭结果 |
+
+每条结果都带着段落在原文中的精确位置，打开后落在正文上，而不是文件开头。索引只保存每段
+前 =chai-index-preview-chars= 个字符——结果列表显示的就是这些，而完整保存每一段曾占掉索引
+的一半以上。=chai-search-passage-text= 会从源文件读回完整段落，因此它反映的是文件**当前**
+的内容，而不是索引时的快照。结果还会标出
+段落所在的完整标题路径——=第五章 分布式系统 › 第三节 共识协议 › Raft=——让你一眼看出
+它在一本长书里的位置。只有段落正上方那一级标题参与检索：把整条路径也索引进去，会让任何
+命中章节标题的查询返回整章的段落。
+
+** 中文检索
+
+Chai 把中文按相邻双字切分入索引，而不是把一整串中文当成一个词，因此查
+=共识算法= 能命中只写了 =分布式共识= 的条目，且不需要任何外部分词器。中英文
+可以混在同一个查询和同一本书里。
+
+** 标注过的段落排序更靠前
+
+被你高亮或评论过的段落会被召回两次：一次作为普通正文，一次作为标注过的正文。
+两条排名用 Reciprocal Rank Fusion 融合，因此你判断过重要的段落会排在同等相关
+但从未标注过的段落之前。
+
+** 过滤
+
+=chai-search= 接受一个可选 plist 来收窄检索范围：
+
+#+begin_src elisp
+(chai-search "共识" '(:status done))           ;; 只搜标为 done 的条目
+(chai-search "共识" '(:keyword "distsys"))     ;; 只搜带该关键词的条目
+(chai-search "共识" '(:highlighted t))         ;; 只搜标注过的段落
+(chai-search "共识" '(:type "important"))      ;; 只搜 IMPORTANT 高亮
+#+end_src
+
+* 问答
+
+Chai 负责找到段落，写回答的事交给别人。下面两条路径共用同一套引用契约：段落带编号、
+模型写出的编号要对着实际给出的范围校验、有效编号跳到书里的确切位置。
+
+** 配合聊天客户端（推荐）
+
+如果你在 Emacs 里已经有聊天客户端，就让它负责回答，Chai 只负责找。
+=chai-superchat.el= 把 Chai 接进 [[https://github.com/yibie/superchat][superchat]]：每一轮输入都会去检索你的书，
+找到的段落以编号材料的形式挂到 prompt 上，回答里的引用变成跳回原文的按钮。
+
+不需要任何配置：加载 =chai= 就已经安排好了，superchat 一加载集成就跟着起来；
+没有 superchat 时它完全不加载。=M-x chai-superchat-mode= 可以开关。
+
+*** superchat 在什么情况下会检索知识库？
+
+在你明确要求之前，从不。superchat 是通用聊天客户端——你问 git diff 的时候不该被塞进
+几章书——所以只有两个刻意的入口：
+
+#+begin_src text
+/chai 共识算法是什么           ;; 只这一次
+#+end_src
+
+#+begin_src elisp
+M-x chai-superchat-cowork      ;; 这个对话，从现在开始
+C-u M-x chai-superchat-cowork  ;; 这个对话停止检索
+#+end_src
+
+=/chai= 只为这一轮查书，对话的其他部分不受影响；回答留在对话流里，可以照常追问。
+=chai-superchat-cowork= 标记整个对话，标记跟着对话走，不跟着你当前在哪个 buffer。
+
+如果你主要就是用 superchat 读书，把 =chai-superchat-scope= 设为 =always= 让每一轮都检索。
+完全不经 superchat 提问，用 =chai-ask=。
+
+分工按"谁掌握什么知识"划：选模型、流式、会话、记忆、工具是 superchat 的，它在这些
+上做得比一个阅读工具好得多——对话中途 =@claude-sonnet= 换模型、多 provider、MCP 工具。
+而"=[3]= 指的是某个 Org 文件第几个字符、在哪一章之下"是 Chai 的，superchat 无从知道。
+所以这层集成刻意做得很薄：段落往一边送，引用往另一边回。
+
+同一个接缝对任何客户端都成立：=chai-context-for= 给出编号段落，=chai-context-render=
+渲染材料块，=chai-context-citations= 校验模型写出的编号，=chai-context-linkify= 把它们
+变成跳转。接别的客户端也就十几行。
+
+** 独立使用
+
+=chai-ask= 不依赖任何聊天客户端，通过 curl 连一个本地服务，在自己的 buffer 里渲染回答。
+
+#+begin_src elisp
+M-x chai-ask        ;; 提问
+M-x chai-ask-again  ;; 重问上一个问题
+#+end_src
+
+在 =*Chai Answer*= buffer 里，在引用上按 =RET= 打开那一段，=n= / =p= 在引用之间移动。
+
+回答是流式写出的。请求里关闭了模型的长链思考——思考型模型会把整个回答预算花在
+动笔之前，而材料本来就已经摆在它面前了。
+
+三条规则保证回答不跑偏：
+
+- **引用要校验，不能信任。** 模型拿到的是编号 =[1]..[N]= 的段落，超出这个范围的
+  编号会被丢弃而不是显示。只给了五段却引用 =[9]=，那个出处是它编的。
+- **上下文在发送前先算预算。** 超出模型窗口不会报错，运行时会从**开头**丢弃 token，
+  而指令正在开头。所以段落是装得下才放，多出来的留在外面。
+- **检索不到就不回答。** Chai 直接说明，而不是让模型凭自己的记忆作答。
+
+需要本地模型服务（默认 Ollama）和 =curl=。
+
+| 变量 | 说明 | 默认值 |
+|------+------+--------|
+| =chai-ask-model= | 生成回答的模型 | =qwen3.5:9b= |
+| =chai-ask-endpoint= | 服务地址 | =http://localhost:11434= |
+| =chai-ask-passages= | 最多使用几段材料 | =8= |
+| =chai-ask-context-tokens= | 这些材料的 token 预算 | =4000= |
+| =chai-ask-think= | 允许模型先长链思考 | =nil= |
+
+* 语义召回（可选）
+
+词法检索找的是**包含你这些字**的段落；语义召回还能找到**意思对上、用词不同**的
+段落——问"为什么人会拖延"，它能找到整章讲这件事、却一次没重复你措辞的内容。
+
+它完全可选：不装，Chai 的检索和现在一模一样。
+
+** 启用
+
+1. 安装 [[https://github.com/asg017/sqlite-vec][sqlite-vec]]，把可加载扩展放到 =~/.emacs.d/chai/vec0.dylib=
+   （Linux 是 =.so=，Windows 是 =.dll=），或设置 =chai-vector-extension=。
+   文件名必须保持 =vec0=：Emacs 只从一份固定白名单里加载 SQLite 扩展。
+2. 拉取嵌入模型：=ollama pull bge-m3=。
+3. 运行 =M-x chai-vector-build=。
+
+#+begin_src elisp
+M-x chai-vector-build    ;; 嵌入知识库的 section（耗时长，可中断续跑）
+M-x chai-vector-status   ;; 查看已嵌入的比例
+M-x chai-vector-stop     ;; 停止嵌入
+M-x chai-search-semantic ;; 单次带语义召回的检索
+#+end_src
+
+和建索引一样，嵌入在独立 Emacs 进程中进行，可停止可续跑。在 2788 本的真实库上实测：
+一次性约四小时，索引增加约 90 MB。
+
+** 嵌入什么，为什么
+
+嵌 section，不嵌段落。逐段嵌入要十三小时，且每次查询多 0.6 秒（向量检索是线性扫描）；
+按 section 只要四小时，延迟也只是零头。而且没有损失：语义召回赢下来的那些查询全是
+**章节级的主题匹配**，而 section 正是这个粒度。
+
+向量以 =int8= 量化存储，保留 98–100% 的排序质量，体积只有四分之一。
+
+** 用在哪里
+
+=chai-ask= 只要语义召回可用就会启用它——那多出的十分之一秒，在模型自身的延迟面前
+可以忽略。普通的 =chai-search= 不启用，因此保持在毫秒级；=chai-search-semantic=
+可以为单次检索打开，把同名变量设为 t 则长期打开。
+
+语义通道**只会增加候选**。向量检索无论你问什么都会返回最近邻，所以它永远无法说明
+"什么都没匹配上"——这个判断始终归词法通道。
+
 * 导出格式
 
 Chai 区分*输入/存储语法*（阅读时直接写的标记）和*导出语法*（复制到 kill-ring 或在预览 buffer 中展示的内容）。
 
-=M-x chai-export-highlights-copy-org= 将高亮与评论以按原文顺序排列的 Org headline 形式复制到 kill-ring。每种高亮类型会转换为大写的 TODO 状态，源文件元数据放在 =:PROPERTIES:= 抽屉里。=#+SEQ_TODO:= 行根据你的 =chai-highlight-types= 动态生成，并在末尾追加 =COMMENT= 以容纳自由批注。
+=M-x chai-export-highlights-copy-org= 将高亮与评论按原文顺序复制为朴素的 Org 条目。高亮 heading 使用可见的 =*[TYPE]= 前缀，自由评论使用 =*[COMMENT]= 前缀，每个条目只在 drawer 中保留一个 =:SOURCE:= 属性。不再添加 TODO 状态、quote block、annotation block 或文档级文件头。
 
-文件头优先使用源 Org buffer 的 =#+TITLE=，其次回退到源文件 base 名，没有源文件时显示 "Chai Export"。
+annotation 会作为 drawer 下方的普通文本输出。跨行原文保留在 heading 下方的普通正文中，连续文本直接放在 heading 标题中。
+
+=M-x chai-export-heading= 会把同样的条目放入可编辑的
+=*Chai Heading Export*= buffer。默认它保持为无文件的临时 buffer，整理后可以直接复制到
+其他笔记中。如果希望保存为固定文件，可设置 =chai-export-heading-file=；之后直接使用
+=C-x C-s= 保存，不需要每次重新选择路径。命令只关联文件路径，不会在打开 buffer 时提前写文件。
 
 =M-x chai-export-preview= 则把同样的导出结果放进可编辑的 =*Chai Export Preview*= buffer。该 buffer 会关联到 =~/.emacs.d/chai/exports/<源文件名>_chai.org=（可通过 =chai-export-preview-directory= 自定义），你可以直接编辑并按 =C-x C-s= 正常保存。预览命令本身不会写入文件。
 
 =M-x chai-export-preview-save= 会直接把同样的导出内容写入该预览文件。
 
 #+begin_example
-#+TITLE: 原文标题
-#+SOURCE: /path/to/source.org
-#+EXPORTED_AT: 2026-06-21 12:30
-#+SEQ_TODO: IMPORTANT IDEA QUESTION KEY COMMENT
-
-* IMPORTANT 原文高亮文本
+* [IMPORTANT] 原文高亮文本
 :PROPERTIES:
 :SOURCE: [[file:/path/to/source.org::25][L25]]
 :END:
 #+end_example
 
-带注释的高亮会把注释放在 headline 下方的 =#+BEGIN_CHAI_ANNOTATION= 块内：
+带注释的高亮会把注释作为 drawer 下方的普通文本：
 
 #+begin_example
-* IDEA 原文高亮文本
+* [IDEA] 原文高亮文本
 :PROPERTIES:
 :SOURCE: [[file:/path/to/source.org::25][L25]]
 :END:
-#+BEGIN_CHAI_ANNOTATION
 annotation 文本
-#+END_CHAI_ANNOTATION
 #+end_example
 
-自由评论导出为 =COMMENT= headline：
+自由评论导出为 =*[COMMENT]= headline：
 
 #+begin_example
-* COMMENT 自由批注文本
+* [COMMENT] 自由批注文本
 :PROPERTIES:
 :SOURCE: [[file:/path/to/source.org::120][L120]]
 :END:
@@ -362,6 +592,26 @@ annotation 文本
 | =M-x chai-export-preview-save= | 直接保存 Org 导出到预览文件 |
 | =M-x chai-context-panel-toggle= | 切换高亮概览面板 |
 | =M-x chai-refresh-annotations= | 刷新注释 overlay |
+
+** 检索命令
+
+| 命令 | 说明 |
+|------+------|
+| =chai-index-rebuild= | 从知识库更新检索索引 |
+| =chai-index-update-file= | 重新索引当前条目 |
+| =chai-index-status= | 查看索引规模与更新时间 |
+| =chai-index-reset= | 删除索引 |
+| =chai-index-stop= | 停止正在运行的重建 |
+| =chai-search= | 检索所有条目 |
+| =chai-search-highlights= | 只检索标注过的段落 |
+| =chai-search-semantic= | 带语义召回的检索 |
+| =chai-ask= | 带引用地回答问题 |
+| =chai-ask-again= | 重问上一个问题 |
+| =chai-superchat-mode= | 把 Chai 接进 superchat |
+| =chai-superchat-cowork= | 让当前对话开始检索知识库 |
+| =chai-vector-build= | 为语义召回嵌入知识库 |
+| =chai-vector-status= | 查看嵌入进度 |
+| =chai-vector-stop= | 停止嵌入 |
 
 * 快速入门
 
@@ -404,18 +654,50 @@ Yibie <yibie@outlook.com>
 
 * Changelog
 
+** v2.4.0 (2026-09)
+
+- Org 复制、heading buffer、preview 与直接保存会保留相关原文标题层级；选区与子树导出
+  会补齐祖先标题，但不会带入无关笔记
+- Library 表格可直接检索：=f= 搜全库，=F= 只搜光标所在的书
+- 新增 =chai-index-auto-mode=，保存书籍后在空闲时增量刷新该书索引
+- 加载 =chai= 后，superchat 出现时会可靠地接好可选集成；=/chai= 和对话级 cowork
+  仍需用户明确开启
+- v2.2/v2.3 的全文检索、带引用回答和可选语义召回在本次公开版本中一并发布
+
+** v2.3.0 (2026-08)
+
+- 新增 =chai-ask=：基于知识库的流式回答，引用经过校验且可跳回原文段落
+- 新增 =chai-context.el=：编号段落与引用校验，任何聊天客户端都能用的接缝；
+  =chai-superchat.el= 据此把 Chai 接进 superchat
+- 新增可选的语义召回（=chai-vector-build=），作为第三路融合通道按语义而非字面查找
+- 两者都依赖本地模型服务，数据不出本机
+
+** v2.2.0 (2026-08)
+
+- 新增跨库检索：=chai-search= 与 =chai-search-highlights= 可跨所有条目查找段落
+  并跳转到精确位置
+- 新增 =chai-index.el= 旁路 SQLite 索引，按内容哈希增量重建
+- 中文检索无需外部分词器，通过相邻双字索引实现
+- 重建在独立 Emacs 进程中进行，可随时停止并从中断处恢复
+- 检索结果显示段落所在的完整标题路径
+- 高亮与评论过的段落通过双通道召回 + Reciprocal Rank Fusion 排在未标注段落之前
+
 ** v2.0.0 (2026-06)
 
 - *工作流重新设计*：Chai 不再把原文分叉到独立工作台加工。现在直接在普通 Org 文件中
   阅读，用标准 Org link（=[[chai:TYPE][TEXT]]=）标记高亮，用标准 Org block
   （=#+BEGIN_CHAI_COMMENT=）写批注，只在需要时把高亮和批注收集导出。
 - *移除 Refinery*：移除中间工作台和笔记保存流程，Chai 聚焦于知识库管理与高亮导出。
-- *Headline 导出*：Org 导出改为按原文顺序的 headline 格式，使用动态 =#+SEQ_TODO= 声明
-  高亮类型 TODO 状态，源元数据放入 =:PROPERTIES:= 抽屉，注释使用 =#+BEGIN_CHAI_ANNOTATION=
-  块。旧的 =CHAI_QUOTE= / =CHAI_COMMENT= special block 已移除。
+- *朴素 heading 导出*：Org 导出改为按原文顺序的 =*[TYPE]= / =*[COMMENT]= heading，
+  每个条目只有一个 =:SOURCE:= drawer。注释使用普通文本，不再添加 TODO 状态、quote block
+  或文档级文件头。
 - *导出预览*：新增 =M-x chai-export-preview= 打开可编辑预览 buffer，以及
   =M-x chai-export-preview-save= 直接写出预览文件。
-- *导出文件头*：导出标题优先使用源文件 =#+TITLE=，没有时回退到源文件名。
+- *临时笔记 buffer*：=M-x chai-export-heading= 打开同样的朴素 heading 导出；默认保持临时
+  buffer，也可以通过 =chai-export-heading-file= 设置固定路径，再用 =C-x C-s= 保存。
+- *高亮对比度*：暗色主题下的 Chai face 现在显式使用浅色前景，避免继承不可读或发黑的文字颜色。
+- *导出结果*：生成的 buffer/文件只包含收集后的 Org 条目，可以直接作为普通笔记继续编辑或保存，
+  不再由 Chai 添加文档级元数据。
 - *Library 快捷菜单*：=?= 在 Library 表格中打开 transient 快捷命令菜单。
 - *移除 tp.el*：Library 表格不再依赖 tp.el，状态/评分变更后刷新标准
   tabulated-list 显示。

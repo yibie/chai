@@ -125,6 +125,8 @@
     ("S"   . chai-library-cycle-sort)
     ("k"   . chai-library-set-keywords)
     ("d"   . chai-library-delete)
+    ("f"   . chai-library-search)
+    ("F"   . chai-library-search-book)
     ("0"   . chai-library-set-rating-0)
     ("1"   . chai-library-set-rating-1)
     ("2"   . chai-library-set-rating-2)
@@ -168,6 +170,9 @@ Set this before loading `chai-library-table', or call
     ("3" "3 stars" chai-library-set-rating-3)
     ("4" "4 stars" chai-library-set-rating-4)
     ("5" "5 stars" chai-library-set-rating-5)]
+   ["Search"
+    ("f" "search library" chai-library-search)
+    ("F" "search this book" chai-library-search-book)]
    ["Files"
     ("R" "auto rename all" chai-library-auto-rename-all)
     ("d" "delete" chai-library-delete)]])

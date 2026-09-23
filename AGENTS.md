@@ -137,3 +137,31 @@
 - 解释方案时优先描述用户操作（快捷键/鼠标/命令）、可见反馈、撤销/失败路径、边界情况。
 - 引用文档时用“文件名 + 小节”口语化说明，不逐字背诵。
 - 提供可选方案时说明它们属于当前还是后续里程碑，帮助用户决策。
+
+---
+
+## Agent skills
+
+以下配置供 mattpocock 系列工程技能（`/to-spec`、`/to-tickets`、`/triage`、
+`/domain-modeling` 等）读取，与本文既有的 `.phrase/` 文档驱动流程并存。
+
+### Issue tracker
+
+需求与规格以 GitHub Issues 形式存放在 `yibie/chai`，通过 `gh` CLI 读写。
+详见 `docs/agents/issue-tracker.md`。
+
+与 `.phrase/` 的分工：GitHub Issue 是**需求与规格的入口**（`spec`、外部反馈、
+待办）；`.phrase/phases/` 保留为**实现过程与回写记录**（`task_*`、`change_*`、
+`adr_*`、`issue_*`）。一个 Issue 被认领实现时，在对应 phase 目录开 `taskNNN`
+并回写，Issue 号写进 `change_*` 条目以保持可追溯。
+
+### Triage labels
+
+使用默认词表，标签字符串与角色同名：`needs-triage`、`needs-info`、
+`ready-for-agent`、`ready-for-human`、`wontfix`。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+single-context 布局：根目录 `CONTEXT.md` + `docs/adr/`。两者目前都不存在，
+由 `/domain-modeling` 在真正需要时惰性创建，不预先建空文件。
+详见 `docs/agents/domain.md`。
