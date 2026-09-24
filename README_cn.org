@@ -37,6 +37,9 @@ Chai 是一个本地优先的 Emacs 阅读工作流：把一个 Org 书库变成
 
 ** v2.1.0 新特性
 
+- *读完一本，笔记放到哪都行。* =M-x chai-store-notes= 像 =org-store-link= 收集链接
+  那样收集整篇标记；=M-x chai-insert-stored-notes= 把它们插到你自己笔记的任意标题下，
+  外面套一个以书名命名、带回链的标题。
 - *笔记不会丢掉它在书里的位置。* Org 复制、heading buffer、preview 和直接保存都会
   还原相关的原文标题路径。位于“第五章 → 共识协议 → Raft”下的笔记仍在这套结构里，
   而不是变成无上下文的一级条目；没有笔记的标题不会导出。
@@ -692,14 +695,11 @@ Yibie <yibie@outlook.com>
 
 * Changelog
 
-** Unreleased
+** v2.1.0 (2026-09)
 
 - 新增 =chai-store-notes= / =chai-insert-stored-notes=：读完后收集整篇标记，
   到任意 Org 标题下插入，不经过 kill ring；两者也出现在右键菜单中。
 - 右键菜单中的所有 Chai 操作归拢到一个 *Chai* 子菜单。
-
-** v2.1.0 (2026-09)
-
 - Org 复制、heading buffer、preview 与直接保存会保留相关原文标题层级；选区与子树导出
   会补齐祖先标题，但不会带入无关笔记
 - Library 表格可直接检索：=f= 搜全库，=F= 只搜光标所在的书

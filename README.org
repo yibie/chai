@@ -43,6 +43,10 @@ The workflow now has five connected parts:
 
 ** What's new in v2.1.0
 
+- *Finish a book, drop its notes anywhere.* =M-x chai-store-notes= snapshots a
+  document's marks like =org-store-link= does for a link; =M-x
+  chai-insert-stored-notes= puts them under any heading in your own notes,
+  wrapped in a heading named after the book with a link back to it.
 - *Notes keep their place in the book.* Org copy, heading buffers, preview, and
   direct save now reproduce the relevant source heading path. A note under
   “Chapter 5 → Consensus → Raft” remains under that structure instead of becoming
@@ -786,15 +790,12 @@ Yibie <yibie@outlook.com>
 
 * Changelog
 
-** Unreleased
+** v2.1.0 (2026-09)
 
 - New =chai-store-notes= / =chai-insert-stored-notes=: store a document's
   marks when you finish reading and insert them under any Org heading, without
   going through the kill ring. Both are also in the right-click menu.
 - The right-click menu now groups every Chai action under one *Chai* submenu.
-
-** v2.1.0 (2026-09)
-
 - Org copy, heading buffers, preview, and direct save preserve the relevant
   source heading hierarchy; range and subtree export restore ancestors without
   including unrelated notes
