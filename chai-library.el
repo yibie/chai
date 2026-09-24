@@ -746,7 +746,7 @@ With prefix arg SINGLE-FILE, prompt to select a single file to import."
       (let ((files (seq-filter (lambda (f) (not (string-prefix-p "." f)))
                                (directory-files chai-library-import-inbox nil nil t))))
         (when (null files)
-          (user-error "Inbox 为空: %s" chai-library-import-inbox))))
+          (user-error "Inbox is empty: %s" chai-library-import-inbox))))
     
     ;; Setup buffer
     (with-current-buffer buf

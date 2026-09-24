@@ -65,10 +65,11 @@ compose freely."
   :group 'chai-ask)
 
 (defcustom chai-ask-system-prompt
-  "你是用户阅读库的助手。只依据给出的段落回答，不要使用段落之外的知识。\n\
-每一个论断后面都要用 [1]、[2] 这样的编号标注它出自哪一段。\n\
-如果给出的段落不足以回答，就直接说明不足，不要推测。\n\
-用提问所用的语言作答，简洁、具体。"
+  "You are an assistant for the user's reading library.  Answer only from the \
+passages given; do not use knowledge from outside them.\n\
+After every claim, cite the passage it comes from with its number, like [1] or [2].\n\
+If the passages are not enough to answer, say so plainly instead of guessing.\n\
+Answer in the language of the question, briefly and concretely."
   "Instructions given to the model before the passages and the question."
   :type 'string
   :group 'chai-ask)
@@ -93,8 +94,9 @@ compose freely."
 (defun chai-ask--prompt (query passages)
   "Return the user message asking QUERY over PASSAGES."
   (concat (chai-context-render passages)
-          "\n以上是全部材料。请只依据它们回答下面的问题，并用 [编号] 标注出处。\n\n"
-          "问题：" query))
+          "\nThat is all the material.  Answer the question below from it alone, "
+          "citing each claim with its [number].\n\n"
+          "Question: " query))
 
 (defun chai-ask--request-body (prompt)
   "Return the JSON request asking the model to answer PROMPT."
@@ -136,7 +138,7 @@ compose freely."
               (with-current-buffer buffer
                 (unless chai-ask--thinking-noted
                   (setq chai-ask--thinking-noted t)
-                  (chai-ask--insert buffer "（模型正在思考…）\n" 'chai-search-meta))))
+                  (chai-ask--insert buffer "(The model is thinking…)\n" 'chai-search-meta))))
             (when (and content (not (string-empty-p content)))
               (chai-ask--insert buffer content)))))))))
 
@@ -186,9 +188,9 @@ compose freely."
          (sources (chai-context-sources chai-ask--passages answer))
          (inhibit-read-only t))
     (goto-char (point-max))
-    (insert "\n\n" (propertize "── 引用来源 ──\n" 'face 'chai-search-meta))
+    (insert "\n\n" (propertize "── Sources ──\n" 'face 'chai-search-meta))
     (if (null sources)
-        (insert (propertize "回答没有标注任何来源，请谨慎对待。\n" 'face 'warning))
+        (insert (propertize "The answer cites no sources; treat it with care.\n" 'face 'warning))
       (pcase-dolist (`(,number ,hit ,name) sources)
         (insert (propertize (format "[%d] " number) 'face 'chai-search-meta))
         (insert-button name :type 'chai-context-citation 'chai-hit hit)
@@ -212,8 +214,8 @@ compose freely."
         (setq chai-ask--passages passages
               chai-ask--partial ""
               chai-ask--thinking-noted nil)
-        (insert (propertize (concat "问：" query "\n\n") 'face 'chai-search-title))
-        (insert (propertize (format "依据 %d 段材料，%s 正在作答…\n\n"
+        (insert (propertize (concat "Q: " query "\n\n") 'face 'chai-search-title))
+        (insert (propertize (format "Answering from %d passages with %s…\n\n"
                                     (length passages) chai-ask-model)
                             'face 'chai-search-meta))
         (setq chai-ask--answer-start (point-marker))))
@@ -251,7 +253,7 @@ FILTERS is the optional plist documented in `chai-search-query'."
       (chai-ask--start query passages)
     ;; No material means no answer: the alternative is a model answering from
     ;; its own memory, which is not what a Library search is for.
-    (message "Chai: 没有检索到相关段落，无法作答。试试换个说法，或先运行 `chai-index-rebuild'")))
+    (message "Chai: no passages found, so there is nothing to answer from.  Try other words, or run `chai-index-rebuild' first")))
 
 ;;;###autoload
 (defun chai-ask-again ()

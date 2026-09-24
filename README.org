@@ -790,6 +790,12 @@ Yibie <yibie@outlook.com>
 
 * Changelog
 
+** Unreleased
+
+- All user-facing messages and prompts are now in English, including the
+  =chai-ask= answer buffer, citation labels, and the default model instructions
+  (answers still follow the language of the question).
+
 ** v2.1.0 (2026-09)
 
 - New =chai-store-notes= / =chai-insert-stored-notes=: store a document's

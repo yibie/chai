@@ -695,6 +695,11 @@ Yibie <yibie@outlook.com>
 
 * Changelog
 
+** Unreleased
+
+- 所有面向用户的提示改为英文，包括 =chai-ask= 回答界面、引用标签和默认的模型指令
+  （回答语言仍跟随提问语言）。
+
 ** v2.1.0 (2026-09)
 
 - 新增 =chai-store-notes= / =chai-insert-stored-notes=：读完后收集整篇标记，

@@ -59,11 +59,11 @@ citation a reader actually reads."
 
 (defun chai-context-source-name (hit)
   "Return a short name for the book and heading HIT came from."
-  (concat "《"
+  (concat "“"
           (truncate-string-to-width
            (or (plist-get hit :title) (file-name-base (plist-get hit :file)))
            chai-context-title-width nil nil t)
-          "》"
+          "”"
           (if-let* ((outline (plist-get hit :outline)))
               (concat chai-index-outline-separator outline)
             "")))
@@ -110,7 +110,7 @@ the model's own memory, which is the one thing a Library answer must never be."
 ;;;###autoload
 (defun chai-context-render (passages &optional heading)
   "Return PASSAGES as a numbered block of material, under HEADING."
-  (concat (or heading "以下是从阅读库中检索到的段落：") "\n\n"
+  (concat (or heading "Passages retrieved from the reading library:") "\n\n"
           (mapconcat (lambda (entry)
                        (pcase-let ((`(,index ,hit ,text) entry))
                          (format "%s\n%s\n" (chai-context-label hit index) text)))
@@ -140,7 +140,7 @@ passages actually supplied refers to a source that was never there."
 (define-button-type 'chai-context-citation
   'action #'chai-context--follow
   'follow-link t
-  'help-echo "跳到这段原文")
+  'help-echo "Jump to this passage")
 
 (defun chai-context--follow (button)
   "Open the passage BUTTON cites."

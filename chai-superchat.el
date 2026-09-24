@@ -61,8 +61,8 @@
   :group 'chai)
 
 (defcustom chai-superchat-instruction
-  "回答时只依据上面这些段落，并用 [编号] 标注每个论断的出处；\
-段落不足以回答时直接说明，不要推测。"
+  "Answer only from the passages above, citing each claim with its [number]; \
+if they are not enough to answer, say so plainly instead of guessing."
   "Line appended after the passages, telling the model how to use them."
   :type 'string
   :group 'chai-superchat)
@@ -83,7 +83,7 @@ little else."
 (defcustom chai-superchat-command "chai"
   "Slash command that answers one question from the Library.
 
-Typing =/chai 共识算法是什么= consults the books for that turn only, without
+Typing =/chai what is a consensus algorithm= consults the books for that turn only, without
 marking the conversation.  The answer stays in the conversation, so it can be
 followed up on like any other."
   :type 'string
@@ -149,11 +149,11 @@ any other command, leaving the chain to whoever handles it."
       (setq chai-superchat--passages nil)
       (cond
        ((string-empty-p question)
-        `(:type :echo :content ,(format "用法：/%s 你的问题" chai-superchat-command)))
+        `(:type :echo :content ,(format "Usage: /%s your question" chai-superchat-command)))
        ((not (setq chai-superchat--passages (ignore-errors (chai-context-for question))))
         ;; Saying nothing was found is the honest answer; sending the question
         ;; on without material would only get the model's own recollection.
-        `(:type :echo :content "Chai: 没有检索到相关段落"))
+        `(:type :echo :content "Chai: no passages found"))
        (t
         `(:type :llm-query
           :prompt ,(concat (chai-context-render chai-superchat--passages)

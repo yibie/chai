@@ -271,7 +271,7 @@ was edited since it was indexed, this returns what it says now."
 (defun chai-library-search-book (query)
   "Search only the book at point in the Library table."
   (interactive
-   (list (read-string (format "Search 《%s》: "
+   (list (read-string (format "Search “%s”: "
                               (or (chai-book-title (chai-library-get-book-at-point))
                                   "?")))))
   (let ((book (chai-library-get-book-at-point)))

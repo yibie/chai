@@ -1925,15 +1925,15 @@ An absent channel contributes nothing to the fusion, so nothing needs a branch."
   (let ((passages (list (list 1 '(:title "共识" :outline "第五章 › 选举") "正文甲")
                         (list 2 '(:title "烹饪" :file "/tmp/x.org") "正文乙"))))
     (let ((rendered (chai-context-render passages)))
-      (should (string-match-p "\\[1\\] 《共识》 › 第五章 › 选举\n正文甲" rendered))
-      (should (string-match-p "\\[2\\] 《烹饪》\n正文乙" rendered))
+      (should (string-match-p "\\[1\\] “共识” › 第五章 › 选举\n正文甲" rendered))
+      (should (string-match-p "\\[2\\] “烹饪”\n正文乙" rendered))
       ;; The first passage is presented first: rank order is the contract.
       (should (< (string-match "\\[1\\]" rendered) (string-match "\\[2\\]" rendered))))))
 
 (ert-deftest chai-test-context-names-a-source-without-an-outline ()
   "A passage above the first heading still names its book."
-  (should (equal (chai-context-source-name '(:title "共识")) "《共识》"))
-  (should (equal (chai-context-source-name '(:file "/tmp/某书.org")) "《某书》")))
+  (should (equal (chai-context-source-name '(:title "共识")) "“共识”"))
+  (should (equal (chai-context-source-name '(:file "/tmp/某书.org")) "“某书”")))
 
 (ert-deftest chai-test-context-resolves-a-citation-to-its-passage ()
   "A citation number maps back to the passage it was given for."
@@ -1955,7 +1955,7 @@ An absent channel contributes nothing to the fusion, so nothing needs a branch."
               ((symbol-function 'chai-context-for)
                (lambda (&rest _) (list (list 1 '(:title "共识") "Raft 的选举过程。")))))
       (chai-superchat-attach nil)
-      (should (string-match-p "\\[1\\] 《共识》" turn))
+      (should (string-match-p "\\[1\\] “共识”" turn))
       (should (string-suffix-p "共识算法" turn))
       (should (= (length chai-superchat--passages) 1)))))
 
@@ -2045,7 +2045,7 @@ about something else helps nobody."
                (lambda (&rest _) (list (list 1 '(:title "共识") "Raft 的选举过程。")))))
       (let ((result (chai-superchat-command "chai" "共识算法是什么" nil nil nil)))
         (should (eq (plist-get result :type) :llm-query))
-        (should (string-match-p "\\[1\\] 《共识》" (plist-get result :prompt)))
+        (should (string-match-p "\\[1\\] “共识”" (plist-get result :prompt)))
         ;; The question is what the conversation shows; the passages are not.
         (should (equal (plist-get result :user-message) "共识算法是什么"))
         (should (string-suffix-p "共识算法是什么" (plist-get result :prompt)))
@@ -2072,7 +2072,7 @@ recollection, which is what a Library answer must never be."
   (cl-letf (((symbol-function 'chai-context-for)
              (lambda (query) (list (list 1 (list :title query) "x")))))
     (let ((result (chai-superchat-command "chai" "" "共识算法" nil nil)))
-      (should (string-match-p "《共识算法》" (plist-get result :prompt))))))
+      (should (string-match-p "“共识算法”" (plist-get result :prompt))))))
 
 ;;; Keeping the index up to date
 
