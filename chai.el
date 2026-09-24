@@ -348,9 +348,9 @@ BACKEND is the export backend."
   (intern (format "chai-highlight-type-%s" type)))
 
 (defun chai-context-menu (menu click)
-  "Populate MENU with Chai actions for CLICK event.
-Adds a basic Chai action in Org buffers, highlight actions when right-clicking
-a Chai highlight, and create-highlight actions when a region is active.
+  "Add a single Chai submenu to MENU for CLICK event.
+The submenu holds actions for the highlight under the click, highlight
+actions for the region, comments, and storing or inserting notes.
 
 Menu commands capture the clicked position so they work even if point has moved
 after the menu was opened."
@@ -359,51 +359,29 @@ after the menu was opened."
            (region-p (use-region-p))
            (region-start (and region-p (region-beginning)))
            (region-end (and region-p (region-end)))
-           (on-highlight (progn (goto-char pos) (chai--highlight-at-point-p))))
-      (define-key-after menu [chai-separator]
-        '(menu-item "--"))
-      (define-key-after menu [chai-add-comment]
-        (list 'menu-item "Chai: add comment"
-              (lambda () (interactive)
-                (if region-p
-                    (chai-insert-comment region-start region-end)
-                  (chai-insert-comment)))
-              :help "Add a comment block, wrapping region if active"))
-      (define-key-after menu [chai-store-notes]
-        (list 'menu-item "Chai: store notes"
-              (lambda () (interactive)
-                (if region-p
-                    (chai-store-notes 'region region-start region-end)
-                  (chai-store-notes 'buffer)))
-              :help "Store highlights and comments for insertion elsewhere"))
-      (when chai-stored-notes
-        (define-key-after menu [chai-insert-stored-notes]
-          (list 'menu-item "Chai: insert stored notes"
-                (lambda () (interactive)
-                  (goto-char pos)
-                  (chai-insert-stored-notes (chai--read-stored-notes)))
-                :help "Insert stored notes at the clicked position")))
+           (on-highlight (progn (goto-char pos) (chai--highlight-at-point-p)))
+           (sub (make-sparse-keymap "Chai")))
       (when on-highlight
-        (define-key-after menu [chai-change-type]
-          (list 'menu-item "Chai: change type"
+        (define-key-after sub [chai-change-type]
+          (list 'menu-item "Change type"
                 (lambda () (interactive) (chai-mouse-change-type pos))
                 :help "Change the highlight type"))
-        (define-key-after menu [chai-edit-annotation]
-          (list 'menu-item "Chai: edit annotation"
+        (define-key-after sub [chai-edit-annotation]
+          (list 'menu-item "Edit annotation"
                 (lambda () (interactive) (chai-mouse-edit-annotation pos))
                 :help "Edit the highlight annotation"))
-        (define-key-after menu [chai-remove]
-          (list 'menu-item "Chai: remove highlight"
+        (define-key-after sub [chai-remove]
+          (list 'menu-item "Remove highlight"
                 (lambda () (interactive) (chai-mouse-remove-highlight pos))
                 :help "Remove this highlight"))
-        (define-key-after menu [chai-copy-text]
-          (list 'menu-item "Chai: copy text"
+        (define-key-after sub [chai-copy-text]
+          (list 'menu-item "Copy text"
                 (lambda () (interactive) (chai-mouse-copy-text pos))
-                :help "Copy the highlighted text")))
-      (define-key-after menu [chai-region-separator]
-        '(menu-item "--"))
-      (define-key-after menu [chai-highlight-region]
-        (list 'menu-item "Chai: highlight region..."
+                :help "Copy the highlighted text"))
+        (define-key-after sub [chai-region-separator]
+          '(menu-item "--")))
+      (define-key-after sub [chai-highlight-region]
+        (list 'menu-item "Highlight region..."
               (lambda () (interactive)
                 (if region-p
                     (chai-highlight-region
@@ -414,8 +392,8 @@ after the menu was opened."
       (dolist (type-def chai-highlight-types)
         (let* ((type (car type-def))
                (menu-key (vector (chai--context-menu-highlight-key type))))
-          (define-key-after menu menu-key
-            (list 'menu-item (format "Chai: highlight %s" type)
+          (define-key-after sub menu-key
+            (list 'menu-item (format "Highlight %s" type)
                   (lambda () (interactive)
                     (if region-p
                         (chai-highlight-region region-start region-end type)
@@ -423,10 +401,10 @@ after the menu was opened."
                           (chai-highlight-region (region-beginning) (region-end) type)
                         (user-error "No region selected"))))
                   :help (format "Highlight region as %s" type)))))
-      (define-key-after menu [chai-highlight-separator2]
+      (define-key-after sub [chai-highlight-separator2]
         '(menu-item "--"))
-      (define-key-after menu [chai-highlight-annotate]
-        (list 'menu-item "Chai: highlight with note..."
+      (define-key-after sub [chai-highlight-annotate]
+        (list 'menu-item "Highlight with note..."
               (lambda () (interactive)
                 (if region-p
                     (let* ((type (completing-read "Highlight type: " (mapcar #'car chai-highlight-types)))
@@ -436,7 +414,34 @@ after the menu was opened."
                            "Note cannot be empty; use chai-highlight-region for plain highlights")
                         (chai-highlight-annotate region-start region-end type note)))
                   (call-interactively #'chai-highlight-annotate)))
-              :help "Highlight region with a note"))))
+              :help "Highlight region with a note"))
+      (define-key-after sub [chai-notes-separator]
+        '(menu-item "--"))
+      (define-key-after sub [chai-add-comment]
+        (list 'menu-item "Add comment"
+              (lambda () (interactive)
+                (if region-p
+                    (chai-insert-comment region-start region-end)
+                  (chai-insert-comment)))
+              :help "Add a comment block, wrapping region if active"))
+      (define-key-after sub [chai-store-notes]
+        (list 'menu-item "Store notes"
+              (lambda () (interactive)
+                (if region-p
+                    (chai-store-notes 'region region-start region-end)
+                  (chai-store-notes 'buffer)))
+              :help "Store highlights and comments for insertion elsewhere"))
+      (when chai-stored-notes
+        (define-key-after sub [chai-insert-stored-notes]
+          (list 'menu-item "Insert stored notes"
+                (lambda () (interactive)
+                  (goto-char pos)
+                  (chai-insert-stored-notes (chai--read-stored-notes)))
+                :help "Insert stored notes at the clicked position")))
+      (define-key-after menu [chai-separator]
+        '(menu-item "--"))
+      (define-key-after menu [chai]
+        (list 'menu-item "Chai" sub))))
   menu)
 
 ;;; Highlight Commands

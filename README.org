@@ -286,19 +286,18 @@ Chai provides 12 semantic highlight types. Each type is rendered with a face, so
 highlights are visible directly in the buffer. Faces work in both light and dark
 themes, and you can customize them or add your own types.
 
-Right-click anywhere in a Chai-enabled Org buffer to add a free-standing
-comment. Right-click a chai link to change type, edit the note, remove the
-highlight, or copy the highlighted text. With an active region, right-click to
-highlight it with any type from =chai-highlight-types=.
+Right-click anywhere in a Chai-enabled Org buffer and open the single *Chai*
+submenu; Chai adds nothing else to the context menu. From top to bottom it
+holds:
 
-The context menu also shows region commands. Use them with an active region:
-
-- *Chai: highlight region...* — choose any highlight type for the region
-- *Chai: highlight TYPE* — quick entries generated from =chai-highlight-types=
+- On a chai link: *Change type*, *Edit annotation*, *Remove highlight*,
+  *Copy text*
+- *Highlight region...* — choose any highlight type for the active region
+- *Highlight TYPE* — quick entries generated from =chai-highlight-types=
 - *Highlight with note...* — highlight the region and attach a note (annotation)
-- *Chai: add comment* — wrap the region in a =#+BEGIN_CHAI_COMMENT= block
-
-If no region is active, *Chai: add comment* inserts an empty comment block at point.
+- *Add comment* — wrap the region in a =#+BEGIN_CHAI_COMMENT= block, or insert
+  an empty comment block at point when no region is active
+- *Store notes* / *Insert stored notes* — see [[*Store and Insert Notes][Store and Insert Notes]]
 
 [[file:pics/chai-context-menu.png]]
 
@@ -599,14 +598,14 @@ matched — that judgement stays with the lexical channel.
 * Store and Insert Notes
 
 Like =org-store-link= for a whole reading session: when you finish a document,
-run =M-x chai-store-notes= (or right-click → /Chai: store notes/). It snapshots
+run =M-x chai-store-notes= (or right-click → /Chai → Store notes/). It snapshots
 the highlights and comments without touching the kill ring. Scope follows the
 copy commands: active region, =C-u= for the current subtree, otherwise the
 whole buffer. Storing the whole buffer again replaces the earlier snapshot of
 the same document.
 
 Then go to any Org note and run =M-x chai-insert-stored-notes= (or right-click
-→ /Chai: insert stored notes/ at the spot). With one stored snapshot it is
+→ /Chai → Insert stored notes/ at the spot). With one stored snapshot it is
 inserted immediately; with several you pick one, newest first. The notes land
 as the last child of the heading at point (with =C-u=, as a sibling after
 its subtree; before the first heading, as a top-level heading), wrapped in a heading named after the document's
@@ -792,6 +791,7 @@ Yibie <yibie@outlook.com>
 - New =chai-store-notes= / =chai-insert-stored-notes=: store a document's
   marks when you finish reading and insert them under any Org heading, without
   going through the kill ring. Both are also in the right-click menu.
+- The right-click menu now groups every Chai action under one *Chai* submenu.
 
 ** v2.1.0 (2026-09)
 

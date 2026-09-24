@@ -264,11 +264,15 @@ special block，正文沿用 Org 的 `org-quote` 样式，block header 保留 `:
 Chai 提供 12 种语义化高亮类型。每种类型都对应一个 face，因此高亮会直接显示在
 buffer 中。face 同时适配浅色/深色主题，你也可以自定义或新增类型。
 
-在启用 Chai 的 Org buffer 中任意位置右键，都可以看到 Chai 菜单。区域命令会一直显示；
-选中区域后使用它们，可以按 =chai-highlight-types= 中的任意类型高亮；=Chai: highlight region...=
-可选择任意类型，=Chai: highlight TYPE= 快捷项会从 =chai-highlight-types= 动态生成，
-=Chai: highlight with note...= 会同时添加注释，=Chai: add comment= 会把选区包进 =#+BEGIN_CHAI_COMMENT= 块。在 chai 链接上右键，
-可以修改类型、编辑注释、移除高亮、复制高亮文本。
+在启用 Chai 的 Org buffer 中任意位置右键，所有 Chai 操作都收在唯一的 *Chai* 子菜单里，
+不会占满整个右键菜单。子菜单从上到下依次是：
+
+- 在 chai 链接上右键时：=Change type=（修改类型）、=Edit annotation=（编辑注释）、
+  =Remove highlight=（移除高亮）、=Copy text=（复制高亮文本）
+- =Highlight region...= 为选区选择任意类型；=Highlight TYPE= 快捷项从
+  =chai-highlight-types= 动态生成；=Highlight with note...= 高亮并添加注释
+- =Add comment= 把选区包进 =#+BEGIN_CHAI_COMMENT= 块，无选区时在光标处插入空评论块
+- =Store notes= / =Insert stored notes= 见「收集与插入笔记」
 
 [[file:pics/chai-context-menu.png]]
 
@@ -521,12 +525,12 @@ M-x chai-search-semantic ;; 单次带语义召回的检索
 * 收集与插入笔记
 
 类似 =org-store-link=，只不过收集的是整篇的标记：读完一篇后运行
-=M-x chai-store-notes=（或右键 → /Chai: store notes/），把高亮与评论存成一份快照，
+=M-x chai-store-notes=（或右键 → /Chai → Store notes/），把高亮与评论存成一份快照，
 不经过 kill ring。范围与复制命令一致：有选区收集选区，=C-u= 收集当前子树，否则收集整篇。
 对同一篇再次整篇收集，会替换之前的快照。
 
 然后到任意 Org 笔记中运行 =M-x chai-insert-stored-notes=（或在目标位置右键 →
-/Chai: insert stored notes/）。只有一份快照时直接插入；有多份时从列表中选择，最新的排在最前。
+/Chai → Insert stored notes/）。只有一份快照时直接插入；有多份时从列表中选择，最新的排在最前。
 笔记会成为光标所在标题的最后一个子标题（加 =C-u= 则作为同级标题放在其子树之后；在第一个标题之前则作为顶级标题），并套在一个
 以原文 =#+TITLE=（没有时用 Library 文件名中的书名）命名、带回链的标题下：
 
@@ -692,6 +696,7 @@ Yibie <yibie@outlook.com>
 
 - 新增 =chai-store-notes= / =chai-insert-stored-notes=：读完后收集整篇标记，
   到任意 Org 标题下插入，不经过 kill ring；两者也出现在右键菜单中。
+- 右键菜单中的所有 Chai 操作归拢到一个 *Chai* 子菜单。
 
 ** v2.1.0 (2026-09)
 
