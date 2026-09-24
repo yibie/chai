@@ -29,6 +29,7 @@
 (require 'subr-x)
 
 (declare-function chirp-entry-at-point "chirp-core")
+(declare-function chai-library--parse-managed-filename "chai-library")
 (defvar eww-current-title)
 (defvar eww-current-url)
 
@@ -51,6 +52,19 @@ When nil, the buffer remains unsaved and can be copied into another note.
 When set, normal Emacs saving writes the edited heading export to this file."
   :type '(choice (const :tag "Keep as temporary buffer" nil) file)
   :group 'chai)
+
+(defcustom chai-stored-notes-keep-after-insertion nil
+  "Non-nil means `chai-insert-stored-notes' keeps the inserted notes.
+When nil, stored notes are removed once inserted, like
+`org-link-keep-stored-after-insertion' does for stored links."
+  :type 'boolean
+  :group 'chai)
+
+(defvar chai-stored-notes nil
+  "Notes stored by `chai-store-notes', most recent first.
+Each entry is a plist with :title, :source, :file, :scope, :count, :time and
+:text, where :text is the Org subtree inserted by
+`chai-insert-stored-notes'.")
 
 ;;; Faces
 
@@ -355,6 +369,20 @@ after the menu was opened."
                     (chai-insert-comment region-start region-end)
                   (chai-insert-comment)))
               :help "Add a comment block, wrapping region if active"))
+      (define-key-after menu [chai-store-notes]
+        (list 'menu-item "Chai: store notes"
+              (lambda () (interactive)
+                (if region-p
+                    (chai-store-notes 'region region-start region-end)
+                  (chai-store-notes 'buffer)))
+              :help "Store highlights and comments for insertion elsewhere"))
+      (when chai-stored-notes
+        (define-key-after menu [chai-insert-stored-notes]
+          (list 'menu-item "Chai: insert stored notes"
+                (lambda () (interactive)
+                  (goto-char pos)
+                  (chai-insert-stored-notes (chai--read-stored-notes)))
+                :help "Insert stored notes at the clicked position")))
       (when on-highlight
         (define-key-after menu [chai-change-type]
           (list 'menu-item "Chai: change type"
@@ -957,14 +985,15 @@ Collect before widening so scope only selects notes, not their ancestors."
                                            (plist-get item :beg))))))
     items))
 
-(defun chai--collect-items-in-scope (scope)
+(defun chai--collect-items-in-scope (scope &optional beg end)
   "Collect Chai items for SCOPE.
-SCOPE is one of: \\='buffer\\=, \\='region\\=, or \\='subtree\\=."
+SCOPE is one of: \\='buffer\\=, \\='region\\=, or \\='subtree\\=.
+For \\='region\\=, BEG and END override the active region."
   (pcase scope
     ('region
-     (if (use-region-p)
+     (if (or (and beg end) (use-region-p))
          (save-restriction
-           (narrow-to-region (region-beginning) (region-end))
+           (narrow-to-region (or beg (region-beginning)) (or end (region-end)))
            (chai--collect-items))
        (user-error "No region selected")))
     ('subtree
@@ -1026,23 +1055,25 @@ TEXT is accepted for compatibility with older callers."
           (concat entry "\n\n" (string-join (nreverse body) "\n\n"))
         entry))))
 
-(defun chai--export-items-as-org (items &optional file-path)
+(defun chai--export-items-as-org (items &optional file-path depth)
   "Render normalized ITEMS beneath their original source heading paths.
 Only ancestors of rendered notes are included, once per source position.
-Each note owns its source link in a properties drawer."
+Each note owns its source link in a properties drawer.  DEPTH, when
+non-nil, demotes every rendered heading by that many levels."
   (let ((seen (make-hash-table :test #'eql))
+        (depth (or depth 0))
         entries)
     (dolist (item items)
       (let* ((path (plist-get item :heading-path))
              (parent (car (last path)))
-             (level (if parent (1+ (plist-get parent :level)) 1))
+             (level (+ depth (if parent (1+ (plist-get parent :level)) 1)))
              (entry (chai--export-render-entry item file-path level)))
         (when entry
           (dolist (heading path)
             (unless (gethash (plist-get heading :beg) seen)
               (puthash (plist-get heading :beg) t seen)
-              (push (concat (make-string (plist-get heading :level) ?*) " "
-                            (plist-get heading :title))
+              (push (concat (make-string (+ depth (plist-get heading :level)) ?*)
+                            " " (plist-get heading :title))
                     entries)))
           (push entry entries))))
     (if entries
@@ -1204,6 +1235,140 @@ Uses the same scope and file naming as `chai-export-preview'."
       (insert out))
     (message "Saved Chai export: %s" preview-file)
     preview-file))
+
+;;; Store and insert notes
+
+(defun chai--stored-notes-title ()
+  "Return the current document's title for stored notes.
+Prefer #+TITLE, then the title part of a managed Library file name."
+  (or (save-restriction
+        (widen)
+        (cadr (assoc "TITLE" (org-collect-keywords '("TITLE")))))
+      (and buffer-file-name
+           (require 'chai-library nil t)
+           (nth 2 (chai-library--parse-managed-filename buffer-file-name)))
+      (and buffer-file-name (file-name-base buffer-file-name))
+      (buffer-name)))
+
+(defun chai--stored-notes-source-link (file-path title)
+  "Return a link to FILE-PATH described by TITLE, or nil."
+  (let ((id (chai--export-source-id file-path)))
+    (cond
+     (id (format "[[chai:%s][%s]]" id title))
+     (file-path (format "[[file:%s][%s]]" file-path title)))))
+
+(defun chai--stored-notes-as-org (items title file-path)
+  "Render ITEMS as one Org subtree headed by TITLE.
+The source chapter tree sits one level below the title heading, so the
+result is always a valid subtree for `org-paste-subtree'."
+  (let ((link (chai--stored-notes-source-link file-path title)))
+    (concat "* " (chai--export-one-line-title title) "\n"
+            (when link
+              (concat ":PROPERTIES:\n:SOURCE: " link "\n:END:\n"))
+            "\n"
+            (chai--export-items-as-org items file-path 1))))
+
+(defun chai--stored-notes-label (entry)
+  "Return the completion label for stored ENTRY."
+  (format "%s  (%d item(s), %s, %s)"
+          (plist-get entry :title)
+          (plist-get entry :count)
+          (plist-get entry :scope)
+          (format-time-string "%H:%M:%S" (plist-get entry :time))))
+
+;;;###autoload
+(defun chai-store-notes (&optional scope beg end)
+  "Store this document's highlights and comments for later insertion.
+Unlike the copy commands, this does not touch the kill ring; insert the
+stored notes anywhere with `chai-insert-stored-notes'.  Storing a whole
+buffer replaces earlier stored notes from the same source.
+Scope selection precedence:
+- Active region stores the region.
+- With prefix arg, stores the current subtree.
+- Otherwise stores the whole buffer.
+BEG and END give the region explicitly, e.g. from a context menu."
+  (interactive
+   (list (cond
+          ((use-region-p) 'region)
+          (current-prefix-arg 'subtree)
+          (t 'buffer))))
+  (let* ((scope (or scope 'buffer))
+         (items (chai--collect-items-in-scope scope beg end))
+         (file-path (buffer-file-name))
+         (source (or file-path (buffer-name)))
+         (title (chai--stored-notes-title)))
+    (unless items
+      (user-error "No Chai highlights or comments to store"))
+    (let ((entry (list :title title
+                       :source source
+                       :file file-path
+                       :scope scope
+                       :count (length items)
+                       :time (current-time)
+                       :text (substring-no-properties
+                              (chai--stored-notes-as-org items title file-path)))))
+      (setq chai-stored-notes
+            (cons entry
+                  (cl-remove-if
+                   (lambda (old)
+                     (and (equal (plist-get old :source) source)
+                          (or (eq scope 'buffer)
+                              (equal (plist-get old :text)
+                                     (plist-get entry :text)))))
+                   chai-stored-notes)))
+      (message "Stored %d item(s) from %s; insert with M-x chai-insert-stored-notes"
+               (length items) title))))
+
+(defun chai--read-stored-notes ()
+  "Return a stored notes entry, prompting only when there are several."
+  (unless chai-stored-notes
+    (user-error "No stored Chai notes; run M-x chai-store-notes in a document first"))
+  (if (null (cdr chai-stored-notes))
+      (car chai-stored-notes)
+    (let* ((choices (mapcar (lambda (entry)
+                              (cons (chai--stored-notes-label entry) entry))
+                            chai-stored-notes))
+           (choice (completing-read "Insert stored notes: " choices nil t
+                                    nil nil (caar choices))))
+      (cdr (assoc choice choices)))))
+
+;;;###autoload
+(defun chai--paste-stored-notes (text &optional sibling)
+  "Paste TEXT as the last child of the heading at point.
+With SIBLING, paste it at the heading's own level after its subtree.
+Before the first heading, paste it as a top-level heading there."
+  (let ((level
+         (if (org-before-first-heading-p)
+             (progn
+               (goto-char (or (save-excursion (outline-next-heading))
+                              (point-max)))
+               1)
+           (org-back-to-heading t)
+           (prog1 (+ (org-current-level) (if sibling 0 1))
+             (org-end-of-subtree t t)))))
+    (unless (bolp)
+      (insert "\n"))
+    (org-paste-subtree level text)))
+
+;;;###autoload
+(defun chai-insert-stored-notes (entry &optional sibling)
+  "Insert stored notes ENTRY as a subtree of the heading at point.
+With one stored entry it is inserted directly; otherwise choose one.
+The notes become the last child of the heading at point, or a
+top-level heading when point is before the first heading.  With a
+prefix argument (SIBLING), they follow the heading's subtree at the
+same level instead.  The entry is removed once inserted unless
+`chai-stored-notes-keep-after-insertion' is non-nil."
+  (interactive
+   (progn
+     (unless (derived-mode-p 'org-mode)
+       (user-error "Stored Chai notes can only be inserted into an Org buffer"))
+     (list (chai--read-stored-notes) current-prefix-arg)))
+  (chai--paste-stored-notes (plist-get entry :text) sibling)
+  (unless chai-stored-notes-keep-after-insertion
+    (setq chai-stored-notes (delq entry chai-stored-notes)))
+  (message "Inserted %d item(s) from %s"
+           (plist-get entry :count) (plist-get entry :title)))
 
 ;;; Chirp Capture
 

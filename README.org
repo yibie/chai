@@ -124,6 +124,7 @@ Customize via these variables:
 | =chai-library-import-archive= | Archive directory | =~/.emacs.d/chai/archive/= |
 | =chai-export-preview-directory= | Export preview directory | =~/.emacs.d/chai/exports/= |
 | =chai-export-heading-file= | Optional file for the editable heading buffer | =nil= |
+| =chai-stored-notes-keep-after-insertion= | Keep stored notes after inserting them | =nil= |
 | =chai-index-file= | Search index database | =~/.emacs.d/chai/index.db= |
 | =chai-index-preview-chars= | Passage text stored for display | =240= |
 | =chai-index-chunk-max-chars= | Upper bound on a passage | =800= |
@@ -274,6 +275,8 @@ highlight model.
 | =M-x chai-export-heading= | Open an editable temporary heading buffer |
 | =M-x chai-export-preview= | Open editable Org preview buffer |
 | =M-x chai-export-preview-save= | Save Org export directly to the preview file |
+| =M-x chai-store-notes= | Store the document's marks to insert elsewhere |
+| =M-x chai-insert-stored-notes= | Insert stored marks under the heading at point |
 | =M-x chai-context-panel-toggle= | Toggle highlight overview panel |
 | =M-x chai-refresh-annotations= | Refresh annotation overlays |
 
@@ -593,6 +596,40 @@ The semantic channel only ever *adds* candidates. A vector search returns its
 nearest neighbours whatever you ask, so it can never report that nothing
 matched — that judgement stays with the lexical channel.
 
+* Store and Insert Notes
+
+Like =org-store-link= for a whole reading session: when you finish a document,
+run =M-x chai-store-notes= (or right-click → /Chai: store notes/). It snapshots
+the highlights and comments without touching the kill ring. Scope follows the
+copy commands: active region, =C-u= for the current subtree, otherwise the
+whole buffer. Storing the whole buffer again replaces the earlier snapshot of
+the same document.
+
+Then go to any Org note and run =M-x chai-insert-stored-notes= (or right-click
+→ /Chai: insert stored notes/ at the spot). With one stored snapshot it is
+inserted immediately; with several you pick one, newest first. The notes land
+as the last child of the heading at point (with =C-u=, as a sibling after
+its subtree; before the first heading, as a top-level heading), wrapped in a heading named after the document's
+=#+TITLE= (or the title in its Library file name) with a link back to the source:
+
+#+begin_example
+* My notes on attention
+my own thoughts...
+** The Attention Economy
+:PROPERTIES:
+:SOURCE: [[chai:20240101T120000][The Attention Economy]]
+:END:
+*** Chapter 1
+**** [KEY] highlighted text
+:PROPERTIES:
+:SOURCE: [[chai:20240101T120000::42][L42]]
+:END:
+#+end_example
+
+The snapshot is removed once inserted; set
+=chai-stored-notes-keep-after-insertion= to keep it for further insertions.
+Stored notes live only in the current Emacs session.
+
 * Export Format
 
 Chai distinguishes between *storage syntax* (what you type while reading) and
@@ -682,6 +719,8 @@ The =L25= link jumps to the source line in the original file.
 | =M-x chai-export-highlights-copy-org= | Copy marks as Org markup |
 | =M-x chai-export-preview= | Open editable Org preview buffer |
 | =M-x chai-export-preview-save= | Save Org export directly to preview file |
+| =M-x chai-store-notes= | Store marks to insert elsewhere |
+| =M-x chai-insert-stored-notes= | Insert stored marks at point |
 | =M-x chai-context-panel-toggle= | Toggle highlight overview panel |
 | =M-x chai-refresh-annotations= | Refresh annotation overlays |
 
@@ -714,8 +753,9 @@ The =L25= link jumps to the source line in the original file.
    or run =M-x chai-library-open= and press =RET= on the current entry.
 3. *Highlight* — Select text and =M-x chai-highlight-region= or
    =M-x chai-highlight-annotate=.
-4. *Export* — =M-x chai-export-highlights-copy-org= and paste into your notes,
-   or =M-x chai-export-preview= to edit and save the export directly.
+4. *Export* — =M-x chai-store-notes= when you finish reading, then
+   =M-x chai-insert-stored-notes= in your own note; or
+   =M-x chai-export-preview= to edit and save the export directly.
 
 * Integration with Other Tools
 
@@ -746,6 +786,12 @@ Yibie <yibie@outlook.com>
 - Design philosophy inspired by Zettelkasten and Progressive Summarization
 
 * Changelog
+
+** Unreleased
+
+- New =chai-store-notes= / =chai-insert-stored-notes=: store a document's
+  marks when you finish reading and insert them under any Org heading, without
+  going through the kill ring. Both are also in the right-click menu.
 
 ** v2.1.0 (2026-09)
 

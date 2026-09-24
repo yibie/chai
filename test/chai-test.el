@@ -2254,3 +2254,100 @@ must carry it."
                 (should (equal (buffer-string) expected))))))
       (chai-test--kill-preview-buffer)
       (delete-directory chai-export-preview-directory t))))
+
+;;; Store and insert notes
+
+(ert-deftest chai-test-store-notes-wraps-snapshot-without-kill-ring ()
+  "Storing snapshots the notes under a title heading and leaves the kill ring."
+  (let ((chai-stored-notes nil)
+        (kill-ring nil))
+    (chai-test--with-temp-org
+        "#+TITLE: Real Book\n** Orphan\n[[chai:key][One]]\n* Chapter\n[[chai:key][Two]]\n"
+      (setq-local buffer-file-name "/tmp/20240101T120000__book.org")
+      (chai-store-notes 'buffer)
+      (erase-buffer))
+    (should-not kill-ring)
+    (should (= 1 (length chai-stored-notes)))
+    (let ((entry (car chai-stored-notes)))
+      (should (= 2 (plist-get entry :count)))
+      (should (string-search ":SOURCE: [[chai:20240101T120000][Real Book]]"
+                             (plist-get entry :text)))
+      (should (equal (chai-test--export-headlines (plist-get entry :text))
+                     '("* Real Book" "*** Orphan" "**** [KEY] One"
+                       "** Chapter" "*** [KEY] Two")))
+      (with-temp-buffer
+        (org-mode)
+        (insert (plist-get entry :text))
+        (should (org-kill-is-subtree-p (buffer-string)))))))
+
+(ert-deftest chai-test-store-notes-requires-notes ()
+  "Storing a document without Chai notes is an error, not an empty entry."
+  (let ((chai-stored-notes nil))
+    (chai-test--with-temp-org "* Chapter\nplain text\n"
+      (should-error (chai-store-notes 'buffer) :type 'user-error))
+    (should-not chai-stored-notes)))
+
+(ert-deftest chai-test-store-notes-buffer-replaces-same-source ()
+  "A whole-buffer store replaces earlier notes from the same source."
+  (let ((chai-stored-notes nil))
+    (chai-test--with-temp-org "* A\n[[chai:key][One]]\n* B\n[[chai:key][Two]]\n"
+      (setq-local buffer-file-name "/tmp/source.org")
+      (chai-store-notes 'region (point-min) (line-end-position 2))
+      (chai-store-notes 'region (point-min) (line-end-position 2))
+      (should (= 1 (length chai-stored-notes)))
+      (chai-store-notes 'buffer)
+      (should (= 1 (length chai-stored-notes)))
+      (should (= 2 (plist-get (car chai-stored-notes) :count))))))
+
+(ert-deftest chai-test-insert-stored-notes-as-last-child ()
+  "Insertion puts the notes after the current heading's subtree, one level down."
+  (let ((chai-stored-notes nil))
+    (chai-test--with-temp-org "* Chapter\n[[chai:key][One]]\n"
+      (setq-local buffer-file-name "/tmp/source.org")
+      (chai-store-notes 'buffer))
+    (chai-test--with-temp-org "* A\nmy thoughts\nmore\n** B\n* Z\n"
+      (search-forward "my th")
+      (chai-insert-stored-notes (car chai-stored-notes))
+      (should (looking-at-p "\\*\\* source$"))
+      (should (equal (chai-test--export-headlines (buffer-string))
+                     '("* A" "** B" "** source" "*** Chapter"
+                       "**** [KEY] One" "* Z")))
+      (should (string-search "my thoughts\nmore\n** B" (buffer-string))))
+    (should-not chai-stored-notes)))
+
+(ert-deftest chai-test-insert-stored-notes-before-first-heading-and-keep ()
+  "Before any heading, insert at top level; the option keeps the entry."
+  (let ((chai-stored-notes nil)
+        (chai-stored-notes-keep-after-insertion t))
+    (chai-test--with-temp-org "[[chai:key][One]]\n"
+      (setq-local buffer-file-name "/tmp/source.org")
+      (chai-store-notes 'buffer))
+    (chai-test--with-temp-org "preamble\n* A\n"
+      (chai-insert-stored-notes (car chai-stored-notes))
+      (should (equal (chai-test--export-headlines (buffer-string))
+                     '("* source" "** [KEY] One" "* A")))
+      (should (string-prefix-p "preamble\n" (buffer-string))))
+    (should (= 1 (length chai-stored-notes)))))
+
+(ert-deftest chai-test-store-notes-title-from-managed-file-name ()
+  "Without #+TITLE, stored notes use the title part of a Library file name."
+  (let ((chai-stored-notes nil))
+    (chai-test--with-temp-org "[[chai:key][One]]\n"
+      (setq-local buffer-file-name
+                  "/tmp/20240101T120000__Some-Author__Book-Title--done-5.org")
+      (chai-store-notes 'buffer))
+    (should (equal "Book-Title" (plist-get (car chai-stored-notes) :title)))
+    (should (string-prefix-p "* Book-Title\n"
+                             (plist-get (car chai-stored-notes) :text)))))
+
+(ert-deftest chai-test-insert-stored-notes-as-sibling ()
+  "With a prefix, insert after the heading's subtree at the same level."
+  (let ((chai-stored-notes nil))
+    (chai-test--with-temp-org "[[chai:key][One]]\n"
+      (setq-local buffer-file-name "/tmp/source.org")
+      (chai-store-notes 'buffer))
+    (chai-test--with-temp-org "* Book 3\nbody\n** 3.1\n"
+      (search-forward "body")
+      (chai-insert-stored-notes (car chai-stored-notes) t)
+      (should (equal (chai-test--export-headlines (buffer-string))
+                     '("* Book 3" "** 3.1" "* source" "** [KEY] One"))))))

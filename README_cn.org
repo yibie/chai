@@ -112,6 +112,7 @@ Chai 默认使用以下目录结构（均在 =~/.emacs.d/chai/= 下）：
 | =chai-library-import-archive= | 归档目录 | =~/.emacs.d/chai/archive/= |
 | =chai-export-preview-directory= | 导出预览目录 | =~/.emacs.d/chai/exports/= |
 | =chai-export-heading-file= | 可编辑 heading buffer 的固定保存文件 | =nil= |
+| =chai-stored-notes-keep-after-insertion= | 插入后保留已收集的笔记 | =nil= |
 | =chai-index-file= | 检索索引数据库 | =~/.emacs.d/chai/index.db= |
 | =chai-index-preview-chars= | 索引中为展示保存的段落字数 | =240= |
 | =chai-index-chunk-max-chars= | 单个段落的字数上限 | =800= |
@@ -253,6 +254,8 @@ special block，正文沿用 Org 的 `org-quote` 样式，block header 保留 `:
 | =M-x chai-export-heading= | 打开可编辑的临时 heading buffer |
 | =M-x chai-export-preview= | 打开可编辑的 Org 预览 buffer |
 | =M-x chai-export-preview-save= | 直接保存 Org 导出到预览文件 |
+| =M-x chai-store-notes= | 收集本文标记，稍后插入别处 |
+| =M-x chai-insert-stored-notes= | 在光标所在标题下插入已收集的标记 |
 | =M-x chai-context-panel-toggle= | 切换高亮概览面板 |
 | =M-x chai-refresh-annotations= | 刷新注释 overlay |
 
@@ -515,6 +518,35 @@ M-x chai-search-semantic ;; 单次带语义召回的检索
 语义通道**只会增加候选**。向量检索无论你问什么都会返回最近邻，所以它永远无法说明
 "什么都没匹配上"——这个判断始终归词法通道。
 
+* 收集与插入笔记
+
+类似 =org-store-link=，只不过收集的是整篇的标记：读完一篇后运行
+=M-x chai-store-notes=（或右键 → /Chai: store notes/），把高亮与评论存成一份快照，
+不经过 kill ring。范围与复制命令一致：有选区收集选区，=C-u= 收集当前子树，否则收集整篇。
+对同一篇再次整篇收集，会替换之前的快照。
+
+然后到任意 Org 笔记中运行 =M-x chai-insert-stored-notes=（或在目标位置右键 →
+/Chai: insert stored notes/）。只有一份快照时直接插入；有多份时从列表中选择，最新的排在最前。
+笔记会成为光标所在标题的最后一个子标题（加 =C-u= 则作为同级标题放在其子树之后；在第一个标题之前则作为顶级标题），并套在一个
+以原文 =#+TITLE=（没有时用 Library 文件名中的书名）命名、带回链的标题下：
+
+#+begin_example
+* 关于注意力经济的思考
+我自己的思考……
+** 注意力经济
+:PROPERTIES:
+:SOURCE: [[chai:20240101T120000][注意力经济]]
+:END:
+*** 第一章
+**** [KEY] 原文高亮文本
+:PROPERTIES:
+:SOURCE: [[chai:20240101T120000::42][L42]]
+:END:
+#+end_example
+
+插入后快照即被移除；设置 =chai-stored-notes-keep-after-insertion= 可保留快照以便再次插入。
+快照只保存在当前 Emacs 会话中。
+
 * 导出格式
 
 Chai 区分*输入/存储语法*（阅读时直接写的标记）和*导出语法*（复制到 kill-ring 或在预览 buffer 中展示的内容）。
@@ -590,6 +622,8 @@ annotation 文本
 | =M-x chai-export-highlights-copy-org= | 以 Org 格式复制标记 |
 | =M-x chai-export-preview= | 打开可编辑的 Org 预览 buffer |
 | =M-x chai-export-preview-save= | 直接保存 Org 导出到预览文件 |
+| =M-x chai-store-notes= | 收集本文标记，稍后插入别处 |
+| =M-x chai-insert-stored-notes= | 在光标所在标题下插入已收集的标记 |
 | =M-x chai-context-panel-toggle= | 切换高亮概览面板 |
 | =M-x chai-refresh-annotations= | 刷新注释 overlay |
 
@@ -621,8 +655,8 @@ annotation 文本
    或运行 =M-x chai-library-open= 后按 =RET= 打开当前条目。
 3. *高亮* —— 选中文字，运行 =M-x chai-highlight-region= 或
    =M-x chai-highlight-annotate=。
-4. *导出* —— 运行 =M-x chai-export-highlights-copy-org= 粘贴到自己的笔记，
-   或 =M-x chai-export-preview= 直接编辑并保存导出。
+4. *导出* —— 读完后运行 =M-x chai-store-notes=，到自己的笔记里运行
+   =M-x chai-insert-stored-notes=；或 =M-x chai-export-preview= 直接编辑并保存导出。
 
 * 与其他工具集成
 
@@ -653,6 +687,11 @@ Yibie <yibie@outlook.com>
 - 设计理念受 Zettelkasten 和渐进式总结法启发
 
 * Changelog
+
+** Unreleased
+
+- 新增 =chai-store-notes= / =chai-insert-stored-notes=：读完后收集整篇标记，
+  到任意 Org 标题下插入，不经过 kill ring；两者也出现在右键菜单中。
 
 ** v2.1.0 (2026-09)
 
