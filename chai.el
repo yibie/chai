@@ -719,9 +719,11 @@ PATH format is either \\='TYPE\\=' or \\='TYPE:NOTE\\='."
 
 (defun chai--install-context-menu-keys ()
   "Install Chai's context menu keys in the current buffer."
-  (when (boundp 'context-menu-mode-map)
+  (when (boundp 'context-menu-entry)
     (let ((map (copy-keymap (current-local-map))))
-      (define-key map [down-mouse-3] (lookup-key context-menu-mode-map [down-mouse-3]))
+      ;; The entry itself: `lookup-key' would run its :filter, which needs a
+      ;; live window, and a buffer made by a timer or process has none.
+      (define-key map [down-mouse-3] context-menu-entry)
       (define-key map [mouse-3] #'ignore)
       (use-local-map map))))
 
